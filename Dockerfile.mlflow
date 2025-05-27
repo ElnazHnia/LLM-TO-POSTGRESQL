@@ -1,0 +1,27 @@
+# Use a lightweight Python image
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set the working directory
+WORKDIR /mlflow
+
+# Copy requirements for MLflow
+COPY mlflow_requirements.txt mlflow_requirements.txt
+
+# Upgrade pip and install MLflow dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r mlflow_requirements.txt
+
+# Add a healthcheck script for Docker
+RUN echo '#!/bin/sh\ncurl -f http://localhost:5000 || exit 1' > /healthcheck.sh && chmod +x /healthcheck.sh
+
+# Expose MLflow's default port
+EXPOSE 5000
+
+# Use gunicorn to run the MLflow server
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "--timeout", "120", "--log-level", "info", "mlflow.server:app"]

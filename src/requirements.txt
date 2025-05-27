@@ -1,0 +1,21 @@
+# Web framework
+fastapi
+uvicorn
+
+# HTTP requests
+requests
+
+# Database connection
+psycopg2-binary
+
+# Date parsing
+dateparser
+
+# MLflow logging
+mlflow
+
+# Vector database
+qdrant-client
+
+# Embedding models
+sentence-transformers

@@ -1,0 +1,4 @@
+mlflow
+boto3
+gunicorn
+psycopg2-binary

@@ -3,3 +3,4 @@ postgres_data/
 
 # Ignore local model or sensitive files
 ollama_models/
+.env

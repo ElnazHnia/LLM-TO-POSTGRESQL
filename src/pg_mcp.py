@@ -2,6 +2,9 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import psycopg2
 import os
+import requests
+from dotenv import load_dotenv
+
 
 '''
 
@@ -9,12 +12,21 @@ import os
 FastAPI app that gives table schema, example rows, and executes SQL 
 
 '''
+load_dotenv()
+GRAFANA_URL = os.getenv("GRAFANA_URL")
+GRAFANA_API_KEY = os.getenv("GRAFANA_API_KEY")
+
+headers = {
+    "Authorization": f"Bearer {GRAFANA_API_KEY}",
+    "Content-Type": "application/json"
+}
 # Initialize the FastAPI app
 app = FastAPI()
 
 # Data model for the SQL request body
 class SQLRequest(BaseModel):
     sql: str
+    chart_type: str = "line chart"
 
 # Helper function to establish connection to the PostgreSQL database
 def get_connection():
@@ -73,3 +85,71 @@ def execute_query(request: SQLRequest):
         return {"result": result}
     except Exception as e:
         return {"error": str(e)}
+
+
+@app.post("/grafana_json")
+def create_grafana_dashboard(request: SQLRequest):
+    sql = request.sql
+    chart_type = request.chart_type.lower()
+    # 🔍 Dynamically get UID for "fastapi-dashboards"
+    # folders = requests.get(f"{GRAFANA_URL}/api/folders", headers=headers).json()
+    response = requests.get(f"{GRAFANA_URL}/api/folders", headers=headers)
+    print("📦 pg-mcp Folders raw response:", response.text)
+    print("📦 pg-mcp Folders status code:", response.status_code)
+    folders = response.json()
+    if isinstance(folders, dict) and "message" in folders:
+        print("❌ Grafana error:", folders)
+        return {"error": folders["message"]}
+    folder_uid = next((f["uid"] for f in folders if f["title"] == "fastapi-dashboards"), None)
+    
+     # Map natural language types to Grafana panel types
+    type_map = {
+        "line chart": "timeseries",
+        "bar chart": "barchart",
+        "pie chart": "piechart",
+        "table": "table",
+        "scatter plot": "scatter",
+        "area chart": "timeseries"
+    }
+    format_map = {
+        "timeseries": "time_series",
+        "barchart": "table",
+        "piechart": "table",
+        "table": "table",
+        "scatter": "table"
+    }
+    panel_type = type_map.get(chart_type, "timeseries")
+    format_type = format_map.get(panel_type, "time_series")
+    
+    print(f"Using panel type: {panel_type}, format type: {format_type}")
+    dashboard = {
+        "dashboard": {
+            "title": "LLM: Daily Sales Dashboard",
+            "panels": [
+                {
+                    "title": "Daily Sales Volume",
+                    "type": panel_type,
+                    "datasource": {
+                        "type": "postgres",
+                        "uid": "ceny1lrh6qwaod"
+                        },
+
+                    "targets": [
+                        {
+                            "rawSql": sql,
+                            "format": format_type,
+                            "refId": "A"
+                        }
+                    ],
+                    "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0}
+                }
+            ],
+            "schemaVersion": 36,
+            "version": 1,
+            "refresh": "5s"
+        },
+        "folderUid": folder_uid,       
+        "overwrite": True
+    }
+
+    return dashboard

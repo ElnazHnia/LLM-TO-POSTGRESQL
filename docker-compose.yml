@@ -5,10 +5,11 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - ollama:/root/.ollama
+      - ollama:/root/.ollama    # <-- Only this
     networks:
       - llm-docker-setup_default
     restart: always
+
 
   postgres:
     image: postgres:16-alpine
@@ -97,8 +98,8 @@ services:
 
   mcp_server:
     build:
-      context: .                # Set context to root (so src/ is visible)
-      dockerfile: Dockerfile.mcp  # Use the Dockerfile inside root
+      context: .
+      dockerfile: Dockerfile.mcp
     ports:
       - "8001:8000"
     networks:
@@ -111,7 +112,10 @@ services:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: password
       POSTGRES_PORT: 5432
+    env_file:
+      - .env   # ✅ Load this file
 
+                       
 
   fastapi:
     build:
@@ -128,6 +132,32 @@ services:
       - mcp_server
     environment:
       APP_MODULE: src.llm_api:app
+  
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - llm-docker-setup_default
+    environment:
+      GF_FEATURE_TOGGLES_ENABLE: "accesscontrol"
+  
+    
+  grafana-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.grafana-mcp
+    ports:
+      - "8002:8000"
+    container_name: grafana-mcp    
+    networks:
+      - llm-docker-setup_default
+    environment:
+      APP_MODULE: src.grafana_mcp:app
+    depends_on:
+      - grafana
+
 
 volumes:
   ollama:

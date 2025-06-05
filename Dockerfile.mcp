@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY . .
 
-RUN pip install fastapi uvicorn psycopg2-binary
+RUN pip install fastapi uvicorn python-dotenv psycopg2-binary requests
 
 ENV APP_MODULE=src.pg_mcp:app
 CMD ["sh", "-c", "uvicorn $APP_MODULE --host 0.0.0.0 --port 8000"]

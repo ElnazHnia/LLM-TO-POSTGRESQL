@@ -6,3 +6,5 @@ ollama_models/
 .env
 .env
 .env
+-H
+-d

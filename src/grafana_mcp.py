@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 import requests
 from dotenv import load_dotenv
 import os
+import json
 
 app = FastAPI()
 
@@ -47,14 +48,21 @@ async def create_dashboard(request: Request):
     print("📦 grafana-mcp Folders raw response:", response.text)
     print("📦 grafana-mcp Folders status code:", response.status_code)
     folders = response.json()
-    
-    folder_uid = next((f["uid"] for f in folders if f["title"] == "fastapi-dashboards"), None)
-    print(f"Using folder UID: {folder_uid}")
-    print("GRAFANA_API_KEY ", GRAFANA_API_KEY)	
-    print("GRAFANA_URL ", GRAFANA_URL)
-    # Inject folderUid into payload
-    json_data["folderUid"] = folder_uid or ""
+    folder_uid = next((f["uid"] for f in folders if f["title"] == "LLM_To_POSTGRESQL_FOLDER"), None)
+
+    # Clean any fields that override folderUid
+    for key in ["uid", "id", "folderId"]:
+        json_data["dashboard"].pop(key, None)
+
+    # Inject folder info and overwrite flag
+    json_data["folderUid"] = folder_uid
     json_data["overwrite"] = True
+
+    # Debug print final JSON
+    
+    print("✅ Final JSON to POST:", json.dumps(json_data, indent=2))
+    
+    
    
     response = requests.post(f"{GRAFANA_URL}/api/dashboards/db", headers=headers, json=json_data)
     return response.json()

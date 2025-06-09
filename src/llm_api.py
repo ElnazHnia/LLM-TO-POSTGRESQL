@@ -36,7 +36,125 @@ def force_order_by_time_if_column_exists(sql: str) -> str:
             )
     return sql
 
-def normalize_sql_for_postgres(sql: str) -> str:
+def ensure_aliases_in_select(sql: str) -> str:
+    match = re.search(r"(?is)\bSELECT\s+(.*?)\s+FROM\b", sql)
+    if not match:
+        return sql
+
+    select_clause = match.group(1)
+
+    def split_columns(clause):
+        parts = []
+        current = ''
+        depth = 0
+        for char in clause:
+            if char == ',' and depth == 0:
+                parts.append(current.strip())
+                current = ''
+            else:
+                current += char
+                if char == '(':
+                    depth += 1
+                elif char == ')':
+                    depth -= 1
+        if current:
+            parts.append(current.strip())
+        return parts
+
+    columns = split_columns(select_clause)
+    updated_columns = []
+
+    for col in columns:
+        # Skip if already aliased
+        if re.search(r"\s+AS\s+\w+$", col, re.IGNORECASE):
+            updated_columns.append(col)
+            continue
+
+        # Skip if it's a function call (starts with NAME(...) or EXTRACT(...))
+        if re.match(r"(?i)^\w+\s*\(", col):
+            updated_columns.append(col)
+            continue
+
+        # Generate alias by removing table prefix
+        alias = col.strip()
+        if '.' in alias:
+            alias = alias.split('.')[-1]
+        updated_columns.append(f"{col} AS {alias}")
+    
+    new_select_clause = "SELECT " + ', '.join(updated_columns) + " FROM"
+    sql = re.sub(r"(?is)\bSELECT\s+.*?\s+FROM\b", new_select_clause, sql)
+    print(f"ALIACE Updated SELECT clause: {new_select_clause}")
+    return sql
+
+
+
+def cast_labels_to_text(sql): 
+    # More precise regex to avoid matching FROM inside functions
+    # Look for FROM that's at the start of a line or after whitespace (not inside parentheses)
+    match = re.search(r"\bSELECT\s+(.*?)\s+^FROM\b", sql, re.IGNORECASE | re.DOTALL | re.MULTILINE) 
+    if not match:
+        # Fallback: try to match FROM at word boundary with more context
+        match = re.search(r"\bSELECT\s+(.*?)\s+FROM\s+", sql, re.IGNORECASE | re.DOTALL)
+        if match:
+            select_clause = match.group(1).strip()
+        else:
+            return sql
+    else:
+        select_clause = match.group(1).strip()
+    
+     
+    # Simplified pattern - removed possessive quantifiers which aren't supported in Python
+    pattern = re.compile(r"""(?ix)
+        (                                     # Start capture group 1 (expression)
+            (?:
+                # Handle nested function calls like EXTRACT(YEAR FROM DATE_TRUNC(...))
+                \b\w+\s*\(                   # Function name followed by opening paren
+                (?:[^()]*|\([^()]*\))*        # Handle nested parentheses (simplified)
+                \)                            # Closing paren
+            |
+                # Handle simple column references like s.id or region_id
+                (?:\w+\.\w+|\w+)
+            )
+        )                                     # End capture group 1
+        \s+AS\s+(\w+)                         # AS alias (capture group 2)
+    """) 
+    
+    print(f"Testing pattern on: '{select_clause}'")
+    matches = pattern.findall(select_clause)
+    print(f"Found matches: {matches}")
+    
+    def replace_expression(m): 
+        expr, alias = m.groups() 
+        print(f"CAST expr:{expr}, alias: {alias}") 
+        # Skip if it's an aggregate function
+        if (re.search(r'\b(SUM|AVG|COUNT|MIN|MAX)\s*\(', expr, re.IGNORECASE)  or alias.lower() == "time"): 
+            return f"{expr} AS {alias}" 
+        # Skip if already casted 
+        if '::text' in expr.lower(): 
+            return f"{expr} AS {alias}" 
+        # Add ::TEXT cast
+        return f"{expr}::TEXT AS {alias}" 
+ 
+    # Apply replacement for all matched expressions 
+    updated_select_clause = pattern.sub(replace_expression, select_clause) 
+    print(f"CAST Updated SELECT clause: {updated_select_clause}")
+    
+    # Find the original SELECT clause and replace it entirely
+    # Use the same pattern we used to extract it
+    original_select_part = match.group(0)  # The entire matched part
+    new_select_part = f"SELECT {updated_select_clause} FROM"
+    
+    
+    sql = sql.replace(select_clause, updated_select_clause, 1)
+    
+    print(f"CAST Updated SQL: {sql}")
+    
+    return sql
+
+
+def normalize_sql_for_postgres(sql: str, chart_type: str) -> str:
+    
+    sql = ensure_aliases_in_select(sql)
     # ✅ MySQL-style to PostgreSQL conversion
     sql = re.sub(r'\bMONTH\((.*?)\)', r'EXTRACT(MONTH FROM \1)', sql, flags=re.IGNORECASE)
     sql = re.sub(r'\bYEAR\((.*?)\)', r'EXTRACT(YEAR FROM \1)', sql, flags=re.IGNORECASE)
@@ -134,15 +252,15 @@ def normalize_sql_for_postgres(sql: str) -> str:
     re.sub(
         r"""(?ix)                            # Case-insensitive, verbose mode
         (SELECT\s+.*?)                       # Match SELECT clause up to DATE_TRUNC
-        \bDATE_TRUNC\(\s*'day',\s*((\w+\.)?sale_date)\s*\)::TEXT  # Match DATE_TRUNC('day', sale_date)
+        \bDATE_TRUNC\(\s*'day',\s*((\w+\.)?sale_date)\s*\)  # Match DATE_TRUNC('day', sale_date)
         
         ([^;]*?\bFROM\b)                     # Match up to FROM
         """,
-        r"\1DATE_TRUNC('day', \2)::TEXT AS time\4",
+        r"\1DATE_TRUNC('day', \2) AS time\4",
         sql,
         flags=re.DOTALL
     )
-
+    
 
         
     print("SQL after 5 normalization:", sql)
@@ -162,7 +280,10 @@ def normalize_sql_for_postgres(sql: str) -> str:
     print("SQL after 6 normalization:", sql)
     # 🔁 Keep only 'time' in ORDER BY clause, discard others
     sql = force_order_by_time_if_column_exists(sql)
-    print("SQL after 7 normalization:", sql)
+    print("Chart_type after 7 normalization:", chart_type)
+    if chart_type == "bar chart":
+       sql = cast_labels_to_text(sql)
+    print("SQL after 8 normalization:", sql)
     # ✅ Fix WHERE clause EXTRACT comparisons
     sql = re.sub(
         r"(?i)WHERE\s+DATE_TRUNC\('day',\s*(\w+\.)?sale_date\)\s*=\s*EXTRACT\(\s*day\s+FROM\s+'([^']+)'\s*\)",
@@ -297,7 +418,8 @@ def ask_ollama(prompt_request: PromptRequest):
     # Step 7: If response contains SQL, try executing it
     if "select" in llm_answer.lower() and "from" in llm_answer.lower():
         try:
-            sql_query = normalize_sql_for_postgres(extract_sql(llm_answer))
+            chart_type = extract_chart_type_with_llama(prompt)
+            sql_query = normalize_sql_for_postgres(extract_sql(llm_answer),chart_type)
             # Send SQL to the MCP server to execute
             print(f"Executing SQL: {sql_query}")
             db_response = requests.post("http://mcp_server:8000/execute", json={"sql": sql_query})
@@ -305,7 +427,6 @@ def ask_ollama(prompt_request: PromptRequest):
             print(f"SQL execution result: {result}")
             # === Grafana Integration ===
             creds = requests.get("http://grafana-mcp:8000/credentials")
-            chart_type = extract_chart_type_with_llama(prompt)
             dashboard_json = requests.post("http://mcp_server:8000/grafana_json", json={"sql": sql_query, "chart_type": chart_type}).json()
             headers = {"Content-Type": "application/json"}
             

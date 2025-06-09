@@ -100,8 +100,8 @@ def create_grafana_dashboard(request: SQLRequest):
     if isinstance(folders, dict) and "message" in folders:
         print("❌ Grafana error:", folders)
         return {"error": folders["message"]}
-    folder_uid = next((f["uid"] for f in folders if f["title"] == "fastapi-dashboards"), None)
-    
+    folder_uid = next((f["uid"] for f in folders if f["title"] == "LLM_To_POSTGRESQL_FOLDER"), None)
+    print("📦 pg-mcp Folder UID:", folder_uid)
      # Map natural language types to Grafana panel types
     type_map = {
         "line chart": "timeseries",
@@ -125,31 +125,50 @@ def create_grafana_dashboard(request: SQLRequest):
     dashboard = {
         "dashboard": {
             "title": "LLM: Daily Sales Dashboard",
+            "refresh": "5s",
+            "schemaVersion": 36,
+            "version": 1,
             "panels": [
                 {
                     "title": "Daily Sales Volume",
                     "type": panel_type,
                     "datasource": {
-                        "type": "postgres",
-                        "uid": "ceny1lrh6qwaod"
-                        },
-
+                        "type": "grafana-postgresql-datasource",
+                        "uid": "aeo8prusu1i4gc"
+                    },
                     "targets": [
                         {
+                            "refId": "A",
                             "rawSql": sql,
                             "format": format_type,
-                            "refId": "A"
+                            "interval": "auto",
+                            
                         }
                     ],
-                    "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0}
+                    "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+                    "maxDataPoints": 1,  # this goes here instead
+                   
+                    "fieldConfig": {
+                        "defaults": {
+                            "custom": {
+                                "drawStyle": "bars",
+                                "lineWidth": 1,
+                                "fillOpacity": 80,
+                                "axisPlacement": "auto"
+                            }
+                        },
+                        "overrides": []
+                    },
+                    "options": {
+                        "tooltip": {"mode": "single"},
+                        "legend": {"displayMode": "list", "placement": "bottom"},
+                    }
                 }
-            ],
-            "schemaVersion": 36,
-            "version": 1,
-            "refresh": "5s"
+            ]
         },
-        "folderUid": folder_uid,       
+        "folderUid": folder_uid,
         "overwrite": True
     }
-
+    
+    print("📦 pg-mcp Dashboard JSON:", dashboard)
     return dashboard

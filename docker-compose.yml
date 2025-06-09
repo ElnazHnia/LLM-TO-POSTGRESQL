@@ -130,6 +130,7 @@ services:
     depends_on:
       # - mlflow
       - mcp_server
+      - ollama
     environment:
       APP_MODULE: src.llm_api:app
   

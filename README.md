@@ -104,7 +104,7 @@ Run the following if you haven’t already:
 ```bash
 docker compose up --build -d
 ```
-5.  ** Connect Grafana to PostgreSQL and Upload Dashboards (via Terminal) **
+5.  **Connect Grafana to PostgreSQL and Upload Dashboards (via Terminal)**
 
 To automate Grafana configuration without using the browser UI, follow these steps using the terminal. 
 This avoids using deprecated API keys and instead leverages **Grafana service accounts**,

@@ -5,6 +5,7 @@ import json
 import re
 import dateparser
 from datetime import datetime, timedelta
+from typing import List
 
 # from mlflow_logger.logger import log_to_mlflow  # Custom MLflow logging module
 from rag.context_retriever import get_table_schema, get_table_example  # MCP helpers for schema & example
@@ -300,14 +301,25 @@ def is_sql_related(question: str):
     return any(word in question.lower() for word in keywords)
 
 # === Extract SQL from LLM response ===
-def extract_sql(text: str) -> str:
-    # Prefer SQL block inside triple backticks
-    match = re.search(r"```(?:sql)?\s*(SELECT.*?);?\s*```", text, re.DOTALL | re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
-    # Fallback: Match raw SELECT...FROM line
-    match = re.search(r"(SELECT\s.+?\sFROM\s.+?);", text, re.IGNORECASE | re.DOTALL)
-    return match.group(1).strip() if match else ""
+# def extract_sql(text: str) -> str:
+#     # Prefer SQL block inside triple backticks
+#     match = re.search(r"```(?:sql)?\s*(SELECT.*?);?\s*```", text, re.DOTALL | re.IGNORECASE)
+#     if match:
+#         return match.group(1).strip()
+#     # Fallback: Match raw SELECT...FROM line
+#     match = re.search(r"(SELECT\s.+?\sFROM\s.+?);", text, re.IGNORECASE | re.DOTALL)
+#     return match.group(1).strip() if match else ""
+
+def extract_sql(text: str) -> List[str]:
+    # Match all SQL blocks in triple backticks
+    sql_blocks = re.findall(r"```(?:sql)?\s*(SELECT.*?);?\s*```", text, re.DOTALL | re.IGNORECASE)
+    
+    # Fallback: try to find all inline SELECT...FROM queries
+    if not sql_blocks:
+        sql_blocks = re.findall(r"(SELECT\s.+?\sFROM\s.+?);", text, re.IGNORECASE | re.DOTALL)
+    
+    return [sql.strip() for sql in sql_blocks]
+
 
 # ===  Ask LLM to extract table name(s) ===
 def extract_table_name_with_llm(prompt: str) -> str:
@@ -401,6 +413,7 @@ def ask_ollama(prompt_request: PromptRequest):
     else:
         # If not SQL-related, send question directly to LLM
         full_prompt = prompt
+        
     print(f"Full prompt sent to LLM: {full_prompt}")
     # Step 5: Send the structured prompt to Ollama (running LLaMA3 model)
     response = requests.post("http://ollama:11434/api/generate", json={
@@ -414,34 +427,76 @@ def ask_ollama(prompt_request: PromptRequest):
         for line in response.text.strip().split("\n") 
         if line.strip().startswith("{")
     )
+    
+    # Extract multiple SQLs and chart types
+    sql_list = extract_sql(llm_answer)
+    chart_types = []
+    for part in prompt.split(" and "):
+        chart_types.append(extract_chart_type_with_llama(part.strip()))
+
+    # Normalize each SQL
+    normalized_sqls = [
+        normalize_sql_for_postgres(sql, chart)
+        for sql, chart in zip(sql_list, chart_types)
+    ]
+    
+    print("🧪 Normalized SQLs:", normalized_sqls)
+    print("🧪 Chart Types:", chart_types)
+
+    try:
+        # Execute all SQLs
+        db_response = requests.post("http://mcp_server:8000/execute", json={
+            "sql": normalized_sqls,
+            "chart_type": chart_types
+        })
+        result = db_response.json()
+        print(f"SQL execution result: {result}")
+
+        # Create multi-panel dashboard
+        creds = requests.get("http://grafana-mcp:8000/credentials")
+        dashboard_json = requests.post("http://mcp_server:8000/grafana_json", json={
+            "sql": normalized_sqls,
+            "chart_type": chart_types,
+            "title": "LLM: Multi-panel Dashboard"
+        }).json()
+
+        headers = {"Content-Type": "application/json"}
+        create_dash = requests.post("http://grafana-mcp:8000/create_dashboard", headers=headers, json=dashboard_json)
+        grafana_result = create_dash.json()
+
+    except Exception as e:
+        result = {"error": str(e)}
+        grafana_result = {"error": str(e)}
+
+    
 
     # Step 7: If response contains SQL, try executing it
-    if "select" in llm_answer.lower() and "from" in llm_answer.lower():
-        try:
-            chart_type = extract_chart_type_with_llama(prompt)
-            sql_query = normalize_sql_for_postgres(extract_sql(llm_answer),chart_type)
-            # Send SQL to the MCP server to execute
-            print(f"Executing SQL: {sql_query}")
-            db_response = requests.post("http://mcp_server:8000/execute", json={"sql": sql_query})
-            result = db_response.json()
-            print(f"SQL execution result: {result}")
-            # === Grafana Integration ===
-            creds = requests.get("http://grafana-mcp:8000/credentials")
-            dashboard_json = requests.post("http://mcp_server:8000/grafana_json", json={"sql": sql_query, "chart_type": chart_type}).json()
-            headers = {"Content-Type": "application/json"}
+    # if "select" in llm_answer.lower() and "from" in llm_answer.lower():
+    #     try:
+    #         chart_type = extract_chart_type_with_llama(prompt)
+    #         sql_query = normalize_sql_for_postgres(extract_sql(llm_answer),chart_type)
+    #         # Send SQL to the MCP server to execute
+    #         print(f"Executing SQL: {sql_query}")
+    #         db_response = requests.post("http://mcp_server:8000/execute", json={"sql": sql_query})
+    #         result = db_response.json()
+    #         print(f"SQL execution result: {result}")
+    #         # === Grafana Integration ===
+    #         creds = requests.get("http://grafana-mcp:8000/credentials")
+    #         dashboard_json = requests.post("http://mcp_server:8000/grafana_json", json={"sql": sql_query, "chart_type": chart_type}).json()
+    #         headers = {"Content-Type": "application/json"}
             
-            # Create Grafana dashboard using the MCP server
-            create_dash = requests.post("http://grafana-mcp:8000/create_dashboard", headers=headers, json=dashboard_json)
-            grafana_result = create_dash.json()
+    #         # Create Grafana dashboard using the MCP server
+    #         create_dash = requests.post("http://grafana-mcp:8000/create_dashboard", headers=headers, json=dashboard_json)
+    #         grafana_result = create_dash.json()
             
             
-        except Exception as e:
-            result = {"error": str(e)}
-            grafana_result = {"error": str(e)}
-    else:
-        # Otherwise just return the plain answer from LLM
-        result = {"answer": llm_answer}
-        grafana_result = {}
+    #     except Exception as e:
+    #         result = {"error": str(e)}
+    #         grafana_result = {"error": str(e)}
+    # else:
+    #     # Otherwise just return the plain answer from LLM
+    #     result = {"answer": llm_answer}
+    #     grafana_result = {}
 
     # Step 8: Log prompt + LLM result + SQL result to MLflow
     # log_to_mlflow(prompt_request.prompt, llm_answer, result)

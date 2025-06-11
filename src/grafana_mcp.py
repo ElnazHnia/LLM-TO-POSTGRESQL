@@ -53,10 +53,10 @@ async def create_dashboard(request: Request):
     # Clean any fields that override folderUid
     for key in ["uid", "id", "folderId"]:
         json_data["dashboard"].pop(key, None)
-
+    
     # Inject folder info and overwrite flag
     json_data["folderUid"] = folder_uid
-    json_data["overwrite"] = True
+    json_data["overwrite"] = False
 
     # Debug print final JSON
     
@@ -65,6 +65,11 @@ async def create_dashboard(request: Request):
     
    
     response = requests.post(f"{GRAFANA_URL}/api/dashboards/db", headers=headers, json=json_data)
+    
+     # NEW: print actual result from Grafana
+    print("📩 Grafana API Response Status:", response.status_code)
+    print("📩 Grafana API Response Body:", response.text)
+    
     return response.json()
 
 

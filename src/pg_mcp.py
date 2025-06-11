@@ -4,8 +4,8 @@ import psycopg2
 import os
 import requests
 from dotenv import load_dotenv
-
-
+from typing import List
+from datetime import datetime
 '''
 
 # pg_mcp.py
@@ -25,8 +25,9 @@ app = FastAPI()
 
 # Data model for the SQL request body
 class SQLRequest(BaseModel):
-    sql: str
-    chart_type: str = "line chart"
+    sql: List[str]
+    chart_type: List[str]
+    title: str = "LLM: Multi-panel Dashboard"
 
 # Helper function to establish connection to the PostgreSQL database
 def get_connection():
@@ -75,22 +76,33 @@ def get_example_row(table_name: str):
 # Endpoint to execute a raw SQL query and return the first row of the result
 @app.post("/execute")
 def execute_query(request: SQLRequest):
+    results = []
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(request.sql)
-        result = cur.fetchall()
+
+        for sql in request.sql:
+            cur.execute(sql)
+            rows = cur.fetchall()
+            results.append(rows)
+
         cur.close()
         conn.close()
-        return {"result": result}
+        return {"results": results}
     except Exception as e:
         return {"error": str(e)}
+
 
 
 @app.post("/grafana_json")
 def create_grafana_dashboard(request: SQLRequest):
     sql = request.sql
-    chart_type = request.chart_type.lower()
+    
+    if isinstance(request.chart_type, list):
+        chart_types = [ct.lower() for ct in request.chart_type]
+    else:
+        chart_types = [request.chart_type.lower()]
+
     # 🔍 Dynamically get UID for "fastapi-dashboards"
     # folders = requests.get(f"{GRAFANA_URL}/api/folders", headers=headers).json()
     response = requests.get(f"{GRAFANA_URL}/api/folders", headers=headers)
@@ -118,57 +130,68 @@ def create_grafana_dashboard(request: SQLRequest):
         "table": "table",
         "scatter": "table"
     }
-    panel_type = type_map.get(chart_type, "timeseries")
-    format_type = format_map.get(panel_type, "time_series")
     
-    print(f"Using panel type: {panel_type}, format type: {format_type}")
+    panels = []
+    for i, (sql, chart_type) in enumerate(zip(request.sql, request.chart_type)):
+        panel_type = type_map.get(chart_type.lower(), "timeseries")
+        format_type = format_map.get(panel_type, "time_series")
+        print(f"▶️ Panel {i+1}: type={panel_type}, format={format_type}")
+
+        panel = {
+            "title": f"Panel {i+1}: {chart_type.title()}",
+            "type": panel_type,
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "aeo8prusu1i4gc"
+            },
+            "targets": [
+                {
+                    "refId": chr(65 + i),
+                    "rawSql": sql,
+                    "format": format_type,
+                    "interval": "auto"
+                }
+            ],
+            "gridPos": {"h": 8, "w": 24, "x": 0, "y": i * 8},
+            "maxDataPoints": 1,
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "drawStyle": "bars",
+                        "lineWidth": 1,
+                        "fillOpacity": 80,
+                        "axisPlacement": "auto"
+                    }
+                },
+                "overrides": []
+            },
+            "options": {
+                "tooltip": {"mode": "single"},
+                "legend": {"displayMode": "list", "placement": "bottom"},
+                **({"reduceOptions": {
+                    "calcs": ["lastNotNull"],
+                    "fields": "",
+                    "values": True
+                }} if panel_type == "piechart" else {})
+            }
+        }
+        panels.append(panel)
+
     dashboard = {
         "dashboard": {
-            "title": "LLM: Daily Sales Dashboard",
+            "title": request.title + datetime.now().strftime("%H:%M:%S"),
             "refresh": "5s",
             "schemaVersion": 36,
             "version": 1,
-            "panels": [
-                {
-                    "title": "Daily Sales Volume",
-                    "type": panel_type,
-                    "datasource": {
-                        "type": "grafana-postgresql-datasource",
-                        "uid": "aeo8prusu1i4gc"
-                    },
-                    "targets": [
-                        {
-                            "refId": "A",
-                            "rawSql": sql,
-                            "format": format_type,
-                            "interval": "auto",
-                            
-                        }
-                    ],
-                    "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
-                    "maxDataPoints": 1,  # this goes here instead
-                   
-                    "fieldConfig": {
-                        "defaults": {
-                            "custom": {
-                                "drawStyle": "bars",
-                                "lineWidth": 1,
-                                "fillOpacity": 80,
-                                "axisPlacement": "auto"
-                            }
-                        },
-                        "overrides": []
-                    },
-                    "options": {
-                        "tooltip": {"mode": "single"},
-                        "legend": {"displayMode": "list", "placement": "bottom"},
-                    }
-                }
-            ]
+            "panels": panels
         },
         "folderUid": folder_uid,
-        "overwrite": True
+        "overwrite": False
     }
-    
+
+    # Clean conflicting fields
+    for key in ["uid", "id", "folderId"]:
+        dashboard["dashboard"].pop(key, None)
+
     print("📦 pg-mcp Dashboard JSON:", dashboard)
     return dashboard

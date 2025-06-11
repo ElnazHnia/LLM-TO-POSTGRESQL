@@ -61,7 +61,7 @@ docker ps
 
 Grafana will be available at: http://localhost:3000  
 FastAPI docs (if enabled) at: http://localhost:8000/docs
-equirements.txt
+
 
 
 3. **Configure environment variables:**
@@ -93,8 +93,6 @@ MLFLOW_PORT=5000
 GRAFANA_API_KEY=your_grafana_api_key
 GRAFANA_URL=http://grafana:3000
 ```
-
-> ⚠️ Keep this file private and **never commit real credentials or API keys** to version control.
 
 
 4. **Start all services with Docker**  

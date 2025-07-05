@@ -1,332 +1,33 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 import requests
 import json
-import re
-import dateparser
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List
 
-# from mlflow_logger.logger import log_to_mlflow  # Custom MLflow logging module
-from rag.context_retriever import get_table_schema, get_table_example  # MCP helpers for schema & example
-'''
-# llm_api.py
-Handles user prompts, talks to LLM, talks to MCP, assembles results
+# Import your models (use the fixed models from above)
+from src.models import DashboardSpec, Panel, Target, GridPos, PanelOptions, ReduceOptions
+from rag.context_retriever import get_table_schema, get_table_example 
 
-'''
-# Initialize FastAPI app
 app = FastAPI()
 
-# Define request model: expects JSON body with a "prompt" string
+OLLAMA_TIMEOUT = 300  # 5 minutes timeout for Ollama requests         
+
 class PromptRequest(BaseModel):
     prompt: str
 
+# Create a global timestamp when the request starts
+def get_current_timestamp() -> str:
+    """Get current timestamp in consistent format"""
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-# ===  Convert MySQL-style SQL to PostgreSQL-style ===
-def force_order_by_time_if_column_exists(sql: str) -> str:
-    # Look for time in SELECT columns
-    select_match = re.search(r"(?i)select\s+(.*?)\s+from", sql, re.DOTALL)
-    if select_match:
-        select_clause = select_match.group(1)
-        if re.search(r"\btime\b", select_clause, re.IGNORECASE):
-            # Replace entire ORDER BY ... with ORDER BY time
-            sql = re.sub(
-                r"(?i)ORDER BY\s+[^;]*(?=(\s+LIMIT|\s+OFFSET|;|$))",
-                "ORDER BY time",
-                sql
-            )
-    return sql
-
-def ensure_aliases_in_select(sql: str) -> str:
-    match = re.search(r"(?is)\bSELECT\s+(.*?)\s+FROM\b", sql)
-    if not match:
-        return sql
-
-    select_clause = match.group(1)
-
-    def split_columns(clause):
-        parts = []
-        current = ''
-        depth = 0
-        for char in clause:
-            if char == ',' and depth == 0:
-                parts.append(current.strip())
-                current = ''
-            else:
-                current += char
-                if char == '(':
-                    depth += 1
-                elif char == ')':
-                    depth -= 1
-        if current:
-            parts.append(current.strip())
-        return parts
-
-    columns = split_columns(select_clause)
-    updated_columns = []
-
-    for col in columns:
-        # Skip if already aliased
-        if re.search(r"\s+AS\s+\w+$", col, re.IGNORECASE):
-            updated_columns.append(col)
-            continue
-
-        # Skip if it's a function call (starts with NAME(...) or EXTRACT(...))
-        if re.match(r"(?i)^\w+\s*\(", col):
-            updated_columns.append(col)
-            continue
-
-        # Generate alias by removing table prefix
-        alias = col.strip()
-        if '.' in alias:
-            alias = alias.split('.')[-1]
-        updated_columns.append(f"{col} AS {alias}")
-    
-    new_select_clause = "SELECT " + ', '.join(updated_columns) + " FROM"
-    sql = re.sub(r"(?is)\bSELECT\s+.*?\s+FROM\b", new_select_clause, sql)
-    print(f"ALIACE Updated SELECT clause: {new_select_clause}")
-    return sql
-
-
-
-def cast_labels_to_text(sql): 
-    # More precise regex to avoid matching FROM inside functions
-    # Look for FROM that's at the start of a line or after whitespace (not inside parentheses)
-    match = re.search(r"\bSELECT\s+(.*?)\s+^FROM\b", sql, re.IGNORECASE | re.DOTALL | re.MULTILINE) 
-    if not match:
-        # Fallback: try to match FROM at word boundary with more context
-        match = re.search(r"\bSELECT\s+(.*?)\s+FROM\s+", sql, re.IGNORECASE | re.DOTALL)
-        if match:
-            select_clause = match.group(1).strip()
-        else:
-            return sql
-    else:
-        select_clause = match.group(1).strip()
-    
-     
-    # Simplified pattern - removed possessive quantifiers which aren't supported in Python
-    pattern = re.compile(r"""(?ix)
-        (                                     # Start capture group 1 (expression)
-            (?:
-                # Handle nested function calls like EXTRACT(YEAR FROM DATE_TRUNC(...))
-                \b\w+\s*\(                   # Function name followed by opening paren
-                (?:[^()]*|\([^()]*\))*        # Handle nested parentheses (simplified)
-                \)                            # Closing paren
-            |
-                # Handle simple column references like s.id or region_id
-                (?:\w+\.\w+|\w+)
-            )
-        )                                     # End capture group 1
-        \s+AS\s+(\w+)                         # AS alias (capture group 2)
-    """) 
-    
-    print(f"Testing pattern on: '{select_clause}'")
-    matches = pattern.findall(select_clause)
-    print(f"Found matches: {matches}")
-    
-    def replace_expression(m): 
-        expr, alias = m.groups() 
-        print(f"CAST expr:{expr}, alias: {alias}") 
-        # Skip if it's an aggregate function
-        if (re.search(r'\b(SUM|AVG|COUNT|MIN|MAX)\s*\(', expr, re.IGNORECASE)  or alias.lower() == "time"): 
-            return f"{expr} AS {alias}" 
-        # Skip if already casted 
-        if '::text' in expr.lower(): 
-            return f"{expr} AS {alias}" 
-        # Add ::TEXT cast
-        return f"{expr}::TEXT AS {alias}" 
- 
-    # Apply replacement for all matched expressions 
-    updated_select_clause = pattern.sub(replace_expression, select_clause) 
-    print(f"CAST Updated SELECT clause: {updated_select_clause}")
-    
-    # Find the original SELECT clause and replace it entirely
-    # Use the same pattern we used to extract it
-    original_select_part = match.group(0)  # The entire matched part
-    new_select_part = f"SELECT {updated_select_clause} FROM"
-    
-    
-    sql = sql.replace(select_clause, updated_select_clause, 1)
-    
-    print(f"CAST Updated SQL: {sql}")
-    
-    return sql
-
-
-def normalize_sql_for_postgres(sql: str, chart_type: str) -> str:
-    
-    sql = ensure_aliases_in_select(sql)
-    # ✅ MySQL-style to PostgreSQL conversion
-    sql = re.sub(r'\bMONTH\((.*?)\)', r'EXTRACT(MONTH FROM \1)', sql, flags=re.IGNORECASE)
-    sql = re.sub(r'\bYEAR\((.*?)\)', r'EXTRACT(YEAR FROM \1)', sql, flags=re.IGNORECASE)
-
-    # ✅ Fix direct EXTRACT(day FROM sale_date) patterns that cause type ambiguity
-    sql = re.sub(
-        r"(?i)EXTRACT\(\s*day\s+FROM\s+(\w+\.)?sale_date\s*\)",
-        r"DATE_TRUNC('day', \1sale_date)",
-        sql
-    )
-    print("SQL after initial normalization:", sql)
-    # ✅ Clean up problematic EXTRACT patterns with DATE_TRUNC
-    sql = re.sub(
-        r"(?i)EXTRACT\(\s*day\s+FROM\s+DATE_TRUNC\('day',\s*(.*?)\)\s*\)",
-        r"DATE_TRUNC('day', \1)",
-        sql
-    )
-
-    # ✅ Normalize DATE(...) to DATE_TRUNC for time axis
-    sql = re.sub(
-        r"(?i)\bDATE\(\s*(\w+\.)?sale_date\s*\)",
-        r"DATE_TRUNC('day', \1sale_date)",
-        sql
-    )
-    print("SQL after 1 normalization:", sql)
-    # ✅ Convert bare sale_date to DATE_TRUNC, but only in specific contexts
-    # In SELECT clauses (but not WHERE/JOIN conditions)
-    sql = re.sub(
-        r"(?i)(SELECT\s+(?:(?!WHERE|FROM|JOIN).)*?)(\b(\w+\.)?sale_date\b)(?![^,]*\))",
-        r"\1DATE_TRUNC('day', \3sale_date)",
-        sql,
-        flags=re.DOTALL
-    )
-    print("SQL after 2 normalization:", sql)
-    
-    # # ✅ Normalize sale_date in SELECT clause (only if not already inside DATE_TRUNC)
-    # sql = re.sub(
-    #     r"(?i)(SELECT\s+.*?)(\b(\w+\.)?sale_date\b)(\s+AS\s+\w+)?(?=,|\s+FROM)",
-    #     lambda m: m.group(1) + f"DATE_TRUNC('day', {m.group(3) or ''}sale_date) AS time",
-    #     sql,
-    #     flags=re.DOTALL
-    # )
-    # ✅ Wrap EXTRACT(... FROM sale_date) with DATE_TRUNC for Grafana compatibility
-    sql = re.sub(
-        r"(?i)EXTRACT\s*\(\s*(\w+)\s+FROM\s+((\w+\.)?sale_date)\s*\)",
-        r"EXTRACT(\1 FROM DATE_TRUNC('day', \2))",
-        sql
-    )
-    # In GROUP BY clauses
-    # sql = re.sub(
-    #     r"(?i)(GROUP BY\s+(?:(?!ORDER|HAVING).)*?)(\b(\w+\.)?sale_date\b)",
-    #     r"\1DATE_TRUNC('day', \3sale_date)",
-    #     sql,
-    #     flags=re.DOTALL
-    # )
-    
-    # In ORDER BY clauses  
-    sql = re.sub(
-        r"(?i)(ORDER BY\s+)(.*?\b)(\w+\.)?sale_date\b",
-        r"\1\2time",
-        sql
-    )
-    
-
-    print("SQL after 3 normalization:", sql)
-    # ✅ Avoid double-nested DATE_TRUNC
-    sql = re.sub(
-        r"(?i)DATE_TRUNC\('day',\s*DATE_TRUNC\('day',\s*(.*?)\)\)",
-        r"DATE_TRUNC('day', \1)",
-        sql
-    )
-    
-    # ✅ Clean up malformed aliases (remove extra content after AS time)
-    sql = re.sub(
-        r"(?i)(DATE_TRUNC\('day',\s*(\w+\.)?sale_date\))\s+AS\s+time[^,\n]*",
-        r"\1 AS time",
-        sql
-    )
-      # ✅ Clean up any other malformed aliases
-    sql = re.sub(
-        r"(?i)(DATE_TRUNC\('day',\s*(\w+\.)?sale_date\))\s+AS\s+[^,\n\s]*\([^)]*\)",
-        r"\1 AS time",
-        sql
-    )
-    # ✅ Standardize DATE_TRUNC aliases to 'time' 
-    sql = re.sub(
-        r"(?i)(DATE_TRUNC\('day',\s*(\w+\.)?sale_date\))\s+AS\s+(?!time\b)\w+",
-        r"\1 AS time",
-        sql
-    )
-    print("SQL after 4 normalization:", sql)
-    # ✅ Add AS time alias if missing in SELECT
-    
-   
-    re.sub(
-        r"""(?ix)                            # Case-insensitive, verbose mode
-        (SELECT\s+.*?)                       # Match SELECT clause up to DATE_TRUNC
-        \bDATE_TRUNC\(\s*'day',\s*((\w+\.)?sale_date)\s*\)  # Match DATE_TRUNC('day', sale_date)
-        
-        ([^;]*?\bFROM\b)                     # Match up to FROM
-        """,
-        r"\1DATE_TRUNC('day', \2) AS time\4",
-        sql,
-        flags=re.DOTALL
-    )
-    
-
-        
-    print("SQL after 5 normalization:", sql)
-    # ✅ Replace DATE_TRUNC in GROUP BY with 'time' if alias exists
-    if "AS time" in sql:
-        sql = re.sub(
-            r"(?i)(GROUP BY[^;]*?)DATE_TRUNC\('day',\s*(\w+\.)?sale_date\)",
-            r"\1time",
-            sql
-        )
-        
-        sql = re.sub(
-            r"(?i)(ORDER BY[^;]*?)DATE_TRUNC\('day',\s*(\w+\.)?sale_date\)",
-            r"\1time",
-            sql
-        )
-    print("SQL after 6 normalization:", sql)
-    # 🔁 Keep only 'time' in ORDER BY clause, discard others
-    sql = force_order_by_time_if_column_exists(sql)
-    print("Chart_type after 7 normalization:", chart_type)
-    if chart_type == "bar chart":
-       sql = cast_labels_to_text(sql)
-    print("SQL after 8 normalization:", sql)
-    # ✅ Fix WHERE clause EXTRACT comparisons
-    sql = re.sub(
-        r"(?i)WHERE\s+DATE_TRUNC\('day',\s*(\w+\.)?sale_date\)\s*=\s*EXTRACT\(\s*day\s+FROM\s+'([^']+)'\s*\)",
-        r"WHERE DATE_TRUNC('day', \1sale_date) = '\2'::date",
-        sql
-    )
-    
-    
-    return sql
-
-# === Check if the prompt is related to SQL/data analysis ===
-def is_sql_related(question: str):
-    keywords = ["sales", "total", "amount", "date", "report", "sold", "data"]
-    return any(word in question.lower() for word in keywords)
-
-# === Extract SQL from LLM response ===
-# def extract_sql(text: str) -> str:
-#     # Prefer SQL block inside triple backticks
-#     match = re.search(r"```(?:sql)?\s*(SELECT.*?);?\s*```", text, re.DOTALL | re.IGNORECASE)
-#     if match:
-#         return match.group(1).strip()
-#     # Fallback: Match raw SELECT...FROM line
-#     match = re.search(r"(SELECT\s.+?\sFROM\s.+?);", text, re.IGNORECASE | re.DOTALL)
-#     return match.group(1).strip() if match else ""
-
-def extract_sql(text: str) -> List[str]:
-    # Match all SQL blocks in triple backticks
-    sql_blocks = re.findall(r"```(?:sql)?\s*(SELECT.*?);?\s*```", text, re.DOTALL | re.IGNORECASE)
-    
-    # Fallback: try to find all inline SELECT...FROM queries
-    if not sql_blocks:
-        sql_blocks = re.findall(r"(SELECT\s.+?\sFROM\s.+?);", text, re.IGNORECASE | re.DOTALL)
-    
-    return [sql.strip() for sql in sql_blocks]
-
-
-# ===  Ask LLM to extract table name(s) ===
 def extract_table_name_with_llm(prompt: str) -> str:
     res = requests.post("http://ollama:11434/api/generate", json={
         "model": "llama3",
         "prompt": f"You are a SQL assistant.\nGiven this question, extract the table name(s) mentioned.\n\nQuestion: {prompt}\n\nReturn only the table names, comma-separated if more than one. The sales table contains person_id, product_id, sale_date is a DATE, and value. The person table stores id and name of customers. The products table has id and name.  " 
-    })
+    },
+    timeout=OLLAMA_TIMEOUT
+    )
    
     raw_response = "".join(
         json.loads(line).get("response", "")
@@ -341,166 +42,504 @@ def extract_table_name_with_llm(prompt: str) -> str:
     return ",".join(clean_tables)
 
 
+def create_structured_prompt(prompt: str, schema_parts: List[str], timestamp: str) -> str:
+    """Create a structured prompt that requests JSON output matching our Pydantic schema"""
+    
+    # Create the JSON schema for the LLM to follow
+    json_schema = {
+        "dashboard": {
+            "title": f"String with timestamp - {timestamp}",
+            "schemaVersion": 36,
+            "version": 1,
+            "refresh": "5s",
+            "time": {"from": "now-5y", "to": "now"},
+            "timepicker": {
+                "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"],
+                "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d", "90d", "6M", "1y", "5y"]
+            },
+            "panels": [
+                {
+                    "id": "Integer - Panel ID",
+                    "type": "String - Panel type (barchart, piechart, table, timeseries, stat)",
+                    "title": "String - Panel title",
+                    "datasource": {"type": "postgres", "uid": "aeo8prusu1i4gc"},
+                    "targets": [
+                        {
+                            "refId": "A",
+                            "format": "String - time_series or table",
+                            "rawSql": "String - PostgreSQL query"
+                        }
+                    ],
+                    "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+                    "options": {
+                        "tooltip": {"mode": "single"},
+                        "legend": {"displayMode": "list", "placement": "bottom"},
+                        "reduceOptions": {
+                            "calcs": ["lastNotNull"],
+                            "fields": "",
+                            "values": True
+                        }
+                    }
+                }
+            ]
+        },
+        "overwrite": False
+    }
+    
+    return f"""
+{chr(10).join(schema_parts)}
 
-def extract_chart_type_with_llama(prompt: str) -> str:
-    """
-    Uses Ollama with LLaMA model to extract the chart type from a natural language prompt.
-    Returns one of: 'bar chart', 'line chart', 'pie chart', 'table', 'scatter plot', 'area chart'.
-    Defaults to 'line chart' if no match is found.
-    """
-    system_instruction = (
-        "You are a data visualization assistant. "
-        "Given a user's prompt, identify the intended type of chart to use. "
-        "Return only one of: 'bar chart', 'line chart', 'pie chart', 'table', 'scatter plot', 'area chart'. "
-        "Be concise. Output only the chart type."
-    )
+User question: {prompt}
 
-    full_prompt = f"{system_instruction}\n\nUser prompt: {prompt}\n\nChart type:"
+CRITICAL: The dashboard title MUST EXACTLY be: "[Your descriptive title] - {timestamp}"
+
+CRITICAL PANEL TYPE RULES - MUST BE FOLLOWED EXACTLY:
+1. NEVER use "bar" - always use "barchart"
+2. NEVER use "pie" - always use "piechart" 
+3. Valid panel types are ONLY: "barchart", "piechart", "table", "timeseries", "stat"
+4. Chart Type Mapping:
+   - If user mentions "bar chart", "bar", "bars" → use type: "barchart" with format: "table"
+   - If user mentions "pie chart", "pie" → use type: "piechart" with format: "table"
+   - If user mentions "table", "list" → use type: "table" with format: "table"
+   - If user mentions "time series", "over time" → use type: "timeseries" with format: "time_series"
+   - If user mentions "total", "sum", "count", "statistic" → use type: "stat" with format: "table"
+
+5. SQL Rules:
+   - For time-based queries (format: "time_series"), alias timestamp as "time": DATE_TRUNC('day', sale_date) AS time
+   - Cast numeric grouping fields to text: EXTRACT(YEAR FROM sale_date)::text AS year
+   - No semicolons at end of SQL
+   - Always prefer displaying human-readable fields (like names) over IDs:
+    - person.name AS customer_name
+    - products.name AS product_name
+
+6. GRID POSITIONS - CRITICAL LAYOUT RULES:
+   ALWAYS arrange panels in pairs (2 per row). Only the final panel gets full width if total is odd.
+   
+   MATHEMATICAL FORMULA - Follow this EXACTLY:
+   ```
+   for i in range(total_panels):
+       if i == total_panels - 1 and total_panels % 2 == 1:
+           # Last panel in odd total - full width
+           x = 0
+           w = 24  
+           y = (i // 2) * 8
+       else:
+           # Regular 2-panel layout
+           x = 0 if i % 2 == 0 else 12
+           w = 12
+           y = (i // 2) * 8
+       
+       panels[i].gridPos = {{"x": x, "y": y, "w": w, "h": 8}}
+   ```
+   
+   EXAMPLES:
+   - 1 panel: Panel 0 (x=0, y=0, w=24, h=8) - FULL WIDTH
+   - 2 panels: Panel 0 (x=0, y=0, w=12, h=8), Panel 1 (x=12, y=0, w=12, h=8) - SIDE BY SIDE
+   - 3 panels: Panel 0 (x=0, y=0, w=12, h=8), Panel 1 (x=12, y=0, w=12, h=8), Panel 2 (x=0, y=8, w=24, h=8) - LAST ONE FULL WIDTH
+   - 4 panels: All panels w=12, arranged in 2 rows of 2 panels each
+   - 5 panels: First 4 panels w=12 (2 rows), last panel w=24 (full width)
+   
+   CRITICAL: Never put a single panel with w=12 alone on a row - it must be either paired (w=12) or full width (w=24)
+
+
+
+7. Dashboard title MUST include the exact timestamp: "[Description] - {timestamp}"
+
+8. IMPORTANT: Single panels or last panel in odd count should use FULL WIDTH (w=24, x=0)
+
+9. Do **not** invent aliases.  Use table names directly
+   (sales.value, person.name, products.name) or declare an alias in FROM.
+   
+REMEMBER: 
+- The panel type must be exactly "barchart" (not "bar"), "piechart" (not "pie"), etc.
+- The title MUST be formatted as: "[Your Description] - {timestamp}"
+
+JSON Schema to follow:
+{json.dumps(json_schema, indent=2)}
+
+Return ONLY valid JSON matching this exact structure. Do not include any explanatory text before or after the JSON.
+"""
+
+
+def create_correction_prompt(original_prompt: str, schema_parts: List[str], json_output: str, error_message: str, timestamp: str) -> str:
+    """Create a simplified prompt for Ollama to fix JSON based on validation error"""
+    
+    return f"""
+You are a JSON validator and fixer. Your task is to analyze the JSON and fix the specific errors mentioned.
+
+ORIGINAL USER REQUEST: {original_prompt}
+
+DATABASE SCHEMA:
+{chr(10).join(schema_parts)}
+
+YOUR PREVIOUS JSON OUTPUT:
+{json_output}
+
+VALIDATION ERRORS TO FIX:
+{error_message}
+
+CRITICAL SQL FIXES NEEDED:
+1. For time-based queries (format: "time_series"), alias timestamp as "time": DATE_TRUNC('day', sale_date) AS time
+
+2. Table names must be PLURAL: sales, person, products (not sale, product)
+
+3. Don't use column aliases in GROUP BY/ORDER BY unless they're simple column names
+
+4. Title must be: "[Description] - {timestamp}"
+
+5. Panel type must be exactly "barchart" (not "bar")
+
+6. Format must be "table" for barchart panels
+
+7. GRID POSITIONS - CRITICAL LAYOUT RULES:
+   Follow these steps EXACTLY in order:
+   
+   Step 1: Count total panels: total_panels = len(panels)
+   Step 2: Apply grid positioning rules:
+   
+8. GRID POSITIONS - CRITICAL LAYOUT RULES:
+   ALWAYS arrange panels in pairs (2 per row). Only the final panel gets full width if total is odd.
+   
+   MATHEMATICAL FORMULA - Follow this EXACTLY:
+   ```
+   for i in range(total_panels):
+       if i == total_panels - 1 and total_panels % 2 == 1:
+           # Last panel in odd total - full width
+           x = 0
+           w = 24  
+           y = (i // 2) * 8
+       else:
+           # Regular 2-panel layout
+           x = 0 if i % 2 == 0 else 12
+           w = 12
+           y = (i // 2) * 8
+       
+       panels[i].gridPos = {{"x": x, "y": y, "w": w, "h": 8}}
+   ```
+   
+   EXAMPLES:
+   - 1 panel: Panel 0 (x=0, y=0, w=24, h=8) - FULL WIDTH
+   - 2 panels: Panel 0 (x=0, y=0, w=12, h=8), Panel 1 (x=12, y=0, w=12, h=8) - SIDE BY SIDE
+   - 3 panels: Panel 0 (x=0, y=0, w=12, h=8), Panel 1 (x=12, y=0, w=12, h=8), Panel 2 (x=0, y=8, w=24, h=8) - LAST ONE FULL WIDTH
+   - 4 panels: All panels w=12, arranged in 2 rows of 2 panels each
+   - 5 panels: First 4 panels w=12 (2 rows), last panel w=24 (full width)
+   
+   CRITICAL: Never put a single panel with w=12 alone on a row - it must be either paired (w=12) or full width (w=24)
+
+
+SPECIFIC FIXES FOR YOUR SQL:
+- Change: GROUP BY day ORDER BY day
+- To: GROUP BY DATE_TRUNC('day', sale_date) ORDER BY DATE_TRUNC('day', sale_date)
+- Or: GROUP BY 1 ORDER BY 1
+
+Return ONLY the corrected JSON. No explanations.
+"""
+
+
+def call_ollama_structured(prompt: str) -> dict:
+    """Call Ollama with structured output request"""
+    try:
+        response = requests.post(            # ← 8 spaces (aligned with the rest)
+            "http://ollama:11434/api/generate",
+            json={
+                "model": "llama3",
+                "prompt": prompt,
+                "format": "json",
+                "stream": False,
+                "options": {
+                    "temperature": 0.1,      # Lower temperature for more consistent JSON
+                    "top_p": 0.9
+                }
+            },
+            timeout=OLLAMA_TIMEOUT           # 90 s (or whatever you set)
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"Ollama API error: {response.status_code}")
+
+        result = response.json()
+        llm_output = result.get("response", "")
+
+        # Try to parse as JSON
+        try:
+            return json.loads(llm_output)
+        except json.JSONDecodeError as e:
+            print(f"JSON decode error: {e}")
+            print(f"Raw LLM output: {llm_output}")
+            raise Exception(f"Invalid JSON from LLM: {str(e)}")
+    except Exception as e:
+        print(f"Error calling Ollama: {e}")
+        raise
+
+
+def validate_with_pydantic(dashboard_data: dict) -> tuple[bool, str, DashboardSpec]:
+    """Validate dashboard data with Pydantic and return success status, error message, and object"""
+    try:
+        dashboard = DashboardSpec(**dashboard_data)
+        return True, "", dashboard
+    except ValidationError as e:
+        return False, str(e), None
+
+def ask_ollama_if_valid(
+        prompt: str,
+        schema: List[str],
+        dashboard_json: str,      # dashboard you want inspected
+        timestamp: str
+) -> tuple[bool, str]:
+    """
+    Ask the LLM to (1) dump every SQL query it sees and (2) run the
+    validation checklist – *including that each panel has the correct
+    `"format"` value*.  The function returns (is_valid, first_error_msg).
+    """
+
+    check_prompt = f"""
+You are a **PostgreSQL-and-Grafana inspector**.
+Return **plain text** only – no Markdown.
+
+STEP 1 – Dump SQL  
+  For every panel in the JSON output  
+    [panel {{id}}] {{title}}  
+    SQL: {{rawSql}}
+
+STEP 2 – Validation   (STOP at the first failure)
+───────────────────────────────────────────────
+USER REQUEST
+{prompt}
+
+DB SCHEMA
+{chr(10).join(schema)}
+
+DASHBOARD JSON
+{dashboard_json}
+───────────────────────────────────────────────
+VALIDATION CHECK-LIST
+1 Title must equal “[Description] – {timestamp}”
+
+2 Panel **type ⇄ format** mapping *(both must be present)*  
+   • barchart   → format = table  
+   • piechart   → format = table  
+   • table      → format = table  
+   • stat       → format = table  
+   • timeseries → format = time_series **AND** SQL must alias the timestamp as `time`
+
+3 Alias sanity  
+   • Build *DeclaredAlias* = every alias/table in FROM/JOIN  
+   • Build *UsedAlias*     = every prefix before “.” in SELECT/WHERE/GROUP/ORDER  
+   • If UsedAlias ∉ DeclaredAlias → “Alias <x> not declared.”
+
+4 Allowed tables: **sales, person, products** (plural) only.
+
+5 No semicolon as the very last SQL character.
+
+6 Bar/Pie numeric group fields must end with `::text`.
+
+7 Every alias used in SELECT/WHERE/GROUP/ORDER
+   must be declared in a FROM/JOIN clause.
+
+8 Singular table names (sale, product, …) are invalid.
+
+OUTPUT  
+• List every failure, one per line  
+• If **all** rules pass → **OK**
+───────────────────────────────────────────────
+""".strip()
 
     try:
-        response = requests.post("http://ollama:11434/api/generate", json={
-            "model": "llama3",
-            "prompt": full_prompt
-        })
-       
-        raw_text = "".join(
-            json.loads(line).get("response", "")
-            for line in response.text.strip().split("\n")
-            if line.strip().startswith("{")
-        ).strip().lower()
+        rsp = requests.post(
+            "http://ollama:11434/api/generate",
+            json={
+                "model": "llama3",
+                "prompt": check_prompt,
+                "stream": False,
+                "options": {"temperature": 0.1},
+            },
+            timeout=OLLAMA_TIMEOUT,
+        )
+        if rsp.status_code != 200:
+            raise RuntimeError(f"Ollama API error: {rsp.status_code}")
 
-        known_types = [
-            "bar chart",
-            "line chart",
-            "pie chart",
-            "table",
-            "scatter plot",
-            "area chart"
+        result_text = rsp.json().get("response", "").strip()
+        print("\n── LLM output ──────────────────────────────\n"
+            + result_text +
+            "\n────────────────────────────────────────────")
+
+        # grab every line that begins with “ERROR”
+        error_lines = [
+            line.strip()
+            for line in result_text.splitlines()
+            if line.strip().lower().startswith("error")
         ]
-        
-        for chart_type in known_types:
-            if chart_type in raw_text:
-                return chart_type
 
-        return "line chart"  # default fallback
+        if not error_lines:                # ⇐ the model answered “OK”
+            return True, ""
+
+        # otherwise return the whole list (joined with new-lines)
+        return False, "\n".join(error_lines)
 
     except Exception as e:
-        print("Error extracting chart type:", e)
-        return "line chart"  # fallback in case of API or parsing failure
+        return False, f"Ollama error: {e}"
 
-# === MAIN ENTRYPOINT: POST /ask ===
+
+
+
+
 @app.post("/ask")
 def ask_ollama(prompt_request: PromptRequest):
-    # Step 1: Replace natural-language time expressions
-   
-    prompt = prompt_request.prompt
-    print(f"Received prompt: {prompt}")
-    # Step 2: Check if it's a SQL/data-related query
-    if is_sql_related(prompt):
-        # Step 3: Ask LLM to find relevant table names
+    try:
+        prompt = prompt_request.prompt
+        print(f"Received prompt: {prompt}")
+
+        # Create a single timestamp for this entire request
+        current_timestamp = get_current_timestamp()
+        print(f"Generated timestamp: {current_timestamp}")
+
+        # Database schema (example — adjust as needed)
+        schema_parts = [
+            "Table: sales\nColumns: id (integer), person_id (integer), product_id (integer), sale_date (date), value (numeric), payment_id (integer), order_id (integer)\nExample Row: {\"id\": 1, \"person_id\": 1, \"product_id\": 1, \"value\": 999.99, \"payment_id\": 1, \"order_id\": 1, \"sale_date\": \"2024-03-01\"}"
+        ]
+        
+        # Extract table names from the prompt using LLM
         table_names_str = extract_table_name_with_llm(prompt)
         table_names = [name.strip() for name in table_names_str.split(",")]
         print(f"Extracted table names: {table_names}")
-        # Step 4: Get schema and example data for each table via MCP
-        schema_parts = []
+        
         for table in table_names:
             schema = get_table_schema(table)
             example = get_table_example(table)
             schema_parts.append(f"Table: {table}\n{schema}\nExample Row: {json.dumps(example)}")
+        print(f"Extracted schema parts: {schema_parts}")
         
-        # Combine context + user question into final LLM prompt
-        full_prompt = "\n\n".join(schema_parts) + f"\n\nUser question: {prompt}"
-    else:
-        # If not SQL-related, send question directly to LLM
-        full_prompt = prompt
+        # STEP 1: Generate initial JSON
+        print("🧠 Step 1: Generating initial JSON from LLM...")
+        structured_prompt = create_structured_prompt(prompt, schema_parts, current_timestamp)
+        dashboard_data = call_ollama_structured(structured_prompt)
+        print(f"🧠 LLM generated initial JSON")
+
+        # STEP 2-N: Iterative validation and correction loop
+        max_iterations = 1
+        iteration = 0
         
-    print(f"Full prompt sent to LLM: {full_prompt}")
-    # Step 5: Send the structured prompt to Ollama (running LLaMA3 model)
-    response = requests.post("http://ollama:11434/api/generate", json={
-        "model": "llama3",
-        "prompt": full_prompt
-    })
+        while iteration < max_iterations:
+            iteration += 1
+            print(f"\n🔄 Iteration {iteration}: Validating JSON...")
+            
+            # Check structure with Pydantic
+            # Pydantic is an automatic checklist we run after the model runs
+            is_structure_valid, structure_error, validated_dashboard = validate_with_pydantic(dashboard_data)
+            
+            if not is_structure_valid:
+                print(f"❌ Structure validation failed: {structure_error}")
+                
+                # Fix structure issues
+                correction_prompt = create_correction_prompt(
+                    prompt, schema_parts, 
+                    json.dumps(dashboard_data, indent=2), 
+                    f"Pydantic structure error: {structure_error}",
+                    current_timestamp
+                )
+                
+                print("🔧 Asking LLM to fix structure issues...")
+                dashboard_data = call_ollama_structured(correction_prompt)
+                continue  # Go to next iteration
+            
+            print("✅ Structure validation passed")
+            
+            # Check logic with Ollama
+            print("🧠 Checking logic validation with LLM...")
+            original_json_str = json.dumps(dashboard_data, indent=2)
+            # original_json_str = """
+            # {
+            # "dashboard": {
+            #     "title": "Bad Dashboard - 2025-07-03 10:00:00",
+            #     "schemaVersion": 36,
+            #     "version": 1,
+            #     "refresh": "5s",
+            #     "time": {"from":"now-1d","to":"now"},
+            #     "timepicker": {"refresh_intervals":["5s"],"time_options":["5m"]},
+            #     "panels": [
+            #     {
+            #         "id": 0,
+            #         "type": "barchart",
+            #         "title": "Bad Alias Example",
+            #         "datasource": {"type":"postgres","uid":"aeo8prusu1i4gc"},
+            #         "targets": [
+            #         {
+            #             "refId": "A",
+            #             "format": "table",
+            #             //  ← ERROR 1:   wrong alias “day”, never declared in FROM
+            #             "rawSql": "SELECT DATE_TRUNC('day', sale_date) AS day, SUM(value) AS value FROM sales GROUP BY day ORDER BY day"
+            #         }
+            #         ],
+            #         "gridPos": {"x":0,"y":0,"w":12,"h":8}
+            #     }
+            #     ]
+            # },
+            # "overwrite": false
+            # }
+            # """ 
+            is_logic_valid, logic_error = ask_ollama_if_valid(prompt, schema_parts, original_json_str, current_timestamp)
+            # OPTIONAL: get all SQLs
+                        
+            print(f"🧠 LLM logic validation result: {is_logic_valid}, error: {logic_error}")
+            
+            if not is_logic_valid:
+                print(f"❌ Logic validation failed: {logic_error}")
+                
+                # Fix logic issues
+                correction_prompt = create_correction_prompt(
+                    prompt, schema_parts, 
+                    original_json_str, 
+                    f"Logic validation error: {logic_error}",
+                    current_timestamp
+                )
+                
+                print(f"🔧 Asking LLM to fix logic issues, correction_prompt: {correction_prompt}...")
+                dashboard_data = call_ollama_structured(correction_prompt)
+                print(f"🧠 after correction :{dashboard_data}")
+                is_logic_valid, logic_error = ask_ollama_if_valid(correction_prompt, schema_parts, dashboard_data, current_timestamp)
+                print(f"🧠 after correction  is_logic_valid :{is_logic_valid}")
+                continue  # Go to next iteration
+            
+            print("✅ Logic validation passed")
+            print(f"🎉 JSON is valid after {iteration} iteration(s)!")
+            break
+        
+        # else:
+        #     # Max iterations reached
+        #     print(f"❌ Max iterations ({max_iterations}) reached. JSON may still have issues.")
+        #     return {
+        #         "status": "error", 
+        #         "error": "Max validation iterations reached", 
+        #         "detail": f"Could not validate JSON after {max_iterations} attempts"
+        #     }
 
-    # Step 6: Parse the streamed LLM response
-    llm_answer = "".join(
-        json.loads(line).get("response", "") 
-        for line in response.text.strip().split("\n") 
-        if line.strip().startswith("{")
-    )
-    
-    # Extract multiple SQLs and chart types
-    sql_list = extract_sql(llm_answer)
-    chart_types = []
-    for part in prompt.split(" and "):
-        chart_types.append(extract_chart_type_with_llama(part.strip()))
+        # STEP FINAL: Send to Grafana
+        print("📊 Sending validated dashboard to Grafana...")
+        dashboard_dict = validated_dashboard.dict(by_alias=True)
+        
+        try:
+            grafana_response = requests.post(
+                "http://grafana-mcp:8000/create_dashboard",
+                headers={"Content-Type": "application/json"},
+                json=dashboard_dict
+            )
+            grafana_result = grafana_response.json()
+            print(f"📊 Grafana result: {grafana_result}")
+        except Exception as e:
+            print(f"❌ Grafana error: {e}")
+            grafana_result = {"error": str(e)}
 
-    # Normalize each SQL
-    normalized_sqls = [
-        normalize_sql_for_postgres(sql, chart)
-        for sql, chart in zip(sql_list, chart_types)
-    ]
-    
-    print("🧪 Normalized SQLs:", normalized_sqls)
-    print("🧪 Chart Types:", chart_types)
-
-    try:
-        # Execute all SQLs
-        db_response = requests.post("http://mcp_server:8000/execute", json={
-            "sql": normalized_sqls,
-            "chart_type": chart_types
-        })
-        result = db_response.json()
-        print(f"SQL execution result: {result}")
-
-        # Create multi-panel dashboard
-        creds = requests.get("http://grafana-mcp:8000/credentials")
-        dashboard_json = requests.post("http://mcp_server:8000/grafana_json", json={
-            "sql": normalized_sqls,
-            "chart_type": chart_types,
-            "title": "LLM: Multi-panel Dashboard"
-        }).json()
-
-        headers = {"Content-Type": "application/json"}
-        create_dash = requests.post("http://grafana-mcp:8000/create_dashboard", headers=headers, json=dashboard_json)
-        grafana_result = create_dash.json()
+        return {
+            "dashboard": dashboard_dict,
+            "grafana_result": grafana_result,
+            "status": "success",
+            "iterations_used": iteration,
+            "timestamp_used": current_timestamp
+        }
 
     except Exception as e:
-        result = {"error": str(e)}
-        grafana_result = {"error": str(e)}
-
-    
-
-    # Step 7: If response contains SQL, try executing it
-    # if "select" in llm_answer.lower() and "from" in llm_answer.lower():
-    #     try:
-    #         chart_type = extract_chart_type_with_llama(prompt)
-    #         sql_query = normalize_sql_for_postgres(extract_sql(llm_answer),chart_type)
-    #         # Send SQL to the MCP server to execute
-    #         print(f"Executing SQL: {sql_query}")
-    #         db_response = requests.post("http://mcp_server:8000/execute", json={"sql": sql_query})
-    #         result = db_response.json()
-    #         print(f"SQL execution result: {result}")
-    #         # === Grafana Integration ===
-    #         creds = requests.get("http://grafana-mcp:8000/credentials")
-    #         dashboard_json = requests.post("http://mcp_server:8000/grafana_json", json={"sql": sql_query, "chart_type": chart_type}).json()
-    #         headers = {"Content-Type": "application/json"}
-            
-    #         # Create Grafana dashboard using the MCP server
-    #         create_dash = requests.post("http://grafana-mcp:8000/create_dashboard", headers=headers, json=dashboard_json)
-    #         grafana_result = create_dash.json()
-            
-            
-    #     except Exception as e:
-    #         result = {"error": str(e)}
-    #         grafana_result = {"error": str(e)}
-    # else:
-    #     # Otherwise just return the plain answer from LLM
-    #     result = {"answer": llm_answer}
-    #     grafana_result = {}
-
-    # Step 8: Log prompt + LLM result + SQL result to MLflow
-    # log_to_mlflow(prompt_request.prompt, llm_answer, result)
-
-    # Step 9: Return both the LLM's response and final result
-    # return {"query": llm_answer, "result": result, "grafana": grafana_result}
-    return {"query": llm_answer, "result": result}
+        print(f"❌ Error in ask_ollama: {e}")
+        return {
+            "error": str(e),
+            "status": "error"
+        }

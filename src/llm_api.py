@@ -3,11 +3,12 @@ from pydantic import BaseModel, ValidationError
 import requests
 import json
 from datetime import datetime
-from typing import List
-
+from typing import List,  Dict
+import time
 # Import your models (use the fixed models from above)
 from src.models import DashboardSpec, Panel, Target, GridPos, PanelOptions, ReduceOptions
 from rag.context_retriever import get_table_schema, get_table_example 
+from src.metrics import record_metric, time_call
 
 app = FastAPI()
 
@@ -15,11 +16,11 @@ OLLAMA_TIMEOUT = 300  # 5 minutes timeout for Ollama requests
 
 class PromptRequest(BaseModel):
     prompt: str
-
+    
 # Create a global timestamp when the request starts
-def get_current_timestamp() -> str:
-    """Get current timestamp in consistent format"""
-    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+def now_timestamp() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 
 def extract_table_name_with_llm(prompt: str) -> str:
     res = requests.post("http://ollama:11434/api/generate", json={
@@ -385,161 +386,78 @@ OUTPUT
 
 @app.post("/ask")
 def ask_ollama(prompt_request: PromptRequest):
+    wall_start = time.perf_counter()
+    fn_times: Dict[str, int] = {}
+    iterations_used = 0
+    success = False
+    err_msg = ""
+    prompt = prompt_request.prompt
+
     try:
-        prompt = prompt_request.prompt
-        print(f"Received prompt: {prompt}")
-
-        # Create a single timestamp for this entire request
-        current_timestamp = get_current_timestamp()
-        print(f"Generated timestamp: {current_timestamp}")
-
-        # Database schema (example — adjust as needed)
-        schema_parts = [
-            "Table: sales\nColumns: id (integer), person_id (integer), product_id (integer), sale_date (date), value (numeric), payment_id (integer), order_id (integer)\nExample Row: {\"id\": 1, \"person_id\": 1, \"product_id\": 1, \"value\": 999.99, \"payment_id\": 1, \"order_id\": 1, \"sale_date\": \"2024-03-01\"}"
+        ts = now_timestamp()
+        schema_parts: List[str] = [
+            "Table: sales\nColumns: id, person_id, product_id, sale_date, value\n"
+            "Example Row: {\"id\":1,\"person_id\":1,...}"
         ]
-        
-        # Extract table names from the prompt using LLM
-        table_names_str = extract_table_name_with_llm(prompt)
-        table_names = [name.strip() for name in table_names_str.split(",")]
-        print(f"Extracted table names: {table_names}")
-        
-        for table in table_names:
-            schema = get_table_schema(table)
-            example = get_table_example(table)
-            schema_parts.append(f"Table: {table}\n{schema}\nExample Row: {json.dumps(example)}")
-        print(f"Extracted schema parts: {schema_parts}")
-        
-        # STEP 1: Generate initial JSON
-        print("🧠 Step 1: Generating initial JSON from LLM...")
-        structured_prompt = create_structured_prompt(prompt, schema_parts, current_timestamp)
-        dashboard_data = call_ollama_structured(structured_prompt)
-        print(f"🧠 LLM generated initial JSON")
 
-        # STEP 2-N: Iterative validation and correction loop
-        max_iterations = 1
-        iteration = 0
-        
-        while iteration < max_iterations:
-            iteration += 1
-            print(f"\n🔄 Iteration {iteration}: Validating JSON...")
-            
-            # Check structure with Pydantic
-            # Pydantic is an automatic checklist we run after the model runs
-            is_structure_valid, structure_error, validated_dashboard = validate_with_pydantic(dashboard_data)
-            
-            if not is_structure_valid:
-                print(f"❌ Structure validation failed: {structure_error}")
-                
-                # Fix structure issues
-                correction_prompt = create_correction_prompt(
-                    prompt, schema_parts, 
-                    json.dumps(dashboard_data, indent=2), 
-                    f"Pydantic structure error: {structure_error}",
-                    current_timestamp
-                )
-                
-                print("🔧 Asking LLM to fix structure issues...")
-                dashboard_data = call_ollama_structured(correction_prompt)
-                continue  # Go to next iteration
-            
-            print("✅ Structure validation passed")
-            
-            # Check logic with Ollama
-            print("🧠 Checking logic validation with LLM...")
-            original_json_str = json.dumps(dashboard_data, indent=2)
-            # original_json_str = """
-            # {
-            # "dashboard": {
-            #     "title": "Bad Dashboard - 2025-07-03 10:00:00",
-            #     "schemaVersion": 36,
-            #     "version": 1,
-            #     "refresh": "5s",
-            #     "time": {"from":"now-1d","to":"now"},
-            #     "timepicker": {"refresh_intervals":["5s"],"time_options":["5m"]},
-            #     "panels": [
-            #     {
-            #         "id": 0,
-            #         "type": "barchart",
-            #         "title": "Bad Alias Example",
-            #         "datasource": {"type":"postgres","uid":"aeo8prusu1i4gc"},
-            #         "targets": [
-            #         {
-            #             "refId": "A",
-            #             "format": "table",
-            #             //  ← ERROR 1:   wrong alias “day”, never declared in FROM
-            #             "rawSql": "SELECT DATE_TRUNC('day', sale_date) AS day, SUM(value) AS value FROM sales GROUP BY day ORDER BY day"
-            #         }
-            #         ],
-            #         "gridPos": {"x":0,"y":0,"w":12,"h":8}
-            #     }
-            #     ]
-            # },
-            # "overwrite": false
-            # }
-            # """ 
-            is_logic_valid, logic_error = ask_ollama_if_valid(prompt, schema_parts, original_json_str, current_timestamp)
-            # OPTIONAL: get all SQLs
-                        
-            print(f"🧠 LLM logic validation result: {is_logic_valid}, error: {logic_error}")
-            
-            if not is_logic_valid:
-                print(f"❌ Logic validation failed: {logic_error}")
-                
-                # Fix logic issues
-                correction_prompt = create_correction_prompt(
-                    prompt, schema_parts, 
-                    original_json_str, 
-                    f"Logic validation error: {logic_error}",
-                    current_timestamp
-                )
-                
-                print(f"🔧 Asking LLM to fix logic issues, correction_prompt: {correction_prompt}...")
-                dashboard_data = call_ollama_structured(correction_prompt)
-                print(f"🧠 after correction :{dashboard_data}")
-                is_logic_valid, logic_error = ask_ollama_if_valid(correction_prompt, schema_parts, dashboard_data, current_timestamp)
-                print(f"🧠 after correction  is_logic_valid :{is_logic_valid}")
-                continue  # Go to next iteration
-            
-            print("✅ Logic validation passed")
-            print(f"🎉 JSON is valid after {iteration} iteration(s)!")
-            break
-        
-        # else:
-        #     # Max iterations reached
-        #     print(f"❌ Max iterations ({max_iterations}) reached. JSON may still have issues.")
-        #     return {
-        #         "status": "error", 
-        #         "error": "Max validation iterations reached", 
-        #         "detail": f"Could not validate JSON after {max_iterations} attempts"
-        #     }
-
-        # STEP FINAL: Send to Grafana
-        print("📊 Sending validated dashboard to Grafana...")
-        dashboard_dict = validated_dashboard.dict(by_alias=True)
-        
-        try:
-            grafana_response = requests.post(
-                "http://grafana-mcp:8000/create_dashboard",
-                headers={"Content-Type": "application/json"},
-                json=dashboard_dict
+        # 1)  Table extraction
+        tables = time_call(fn_times, "extract_table_names", extract_table_name_with_llm, prompt)
+        for tbl in [t.strip() for t in tables.split(",") if t.strip()]:
+            schema_parts.append(
+                f"Table: {tbl}\n"
+                f"{time_call(fn_times, f'get_schema_{tbl}', get_table_schema, tbl)}\n"
+                f"Example Row: {json.dumps(time_call(fn_times, f'get_example_{tbl}', get_table_example, tbl))}"
             )
-            grafana_result = grafana_response.json()
-            print(f"📊 Grafana result: {grafana_result}")
-        except Exception as e:
-            print(f"❌ Grafana error: {e}")
-            grafana_result = {"error": str(e)}
+
+        # 2)  Generate dashboard JSON
+        s_prompt = time_call(fn_times, "create_structured_prompt", create_structured_prompt, prompt, schema_parts, ts)
+        dashboard = time_call(fn_times, "ollama_generate", call_ollama_structured, s_prompt)
+
+        # 3)  Validate / correct loop
+        max_iter = 1
+        for i in range(1, max_iter + 1):
+            iterations_used = i
+            ok_struct, err_struct, validated = time_call(fn_times, "pydantic_validate", validate_with_pydantic, dashboard)
+            if not ok_struct:
+                corr_prompt = time_call(fn_times, "create_corr_struct", create_correction_prompt, prompt, schema_parts, json.dumps(dashboard), err_struct, ts)
+                dashboard = time_call(fn_times, "ollama_fix_struct", call_ollama_structured, corr_prompt)
+                continue
+
+            ok_logic, err_logic = time_call(fn_times, "llm_logic_validate", ask_ollama_if_valid, prompt, schema_parts, json.dumps(dashboard), ts)
+            if not ok_logic:
+                corr_prompt = time_call(fn_times, "create_corr_logic", create_correction_prompt, prompt, schema_parts, json.dumps(dashboard), err_logic, ts)
+                dashboard = time_call(fn_times, "ollama_fix_logic", call_ollama_structured, corr_prompt)
+                continue
+
+            success = True
+            break
+
+        if not success:
+            raise RuntimeError("Max validation iterations reached; dashboard still invalid")
+
+        # 4)  Push to Grafana
+        grafana_resp = time_call(fn_times, "post_grafana", requests.post, "http://grafana-mcp:8000/create_dashboard", headers={"Content-Type": "application/json"}, json=validated.dict(by_alias=True))
+        grafana_json = grafana_resp.json()
 
         return {
-            "dashboard": dashboard_dict,
-            "grafana_result": grafana_result,
             "status": "success",
-            "iterations_used": iteration,
-            "timestamp_used": current_timestamp
+            "iterations": iterations_used,
+            "timestamp": ts,
+            "function_times_ms": fn_times,
+            "grafana_result": grafana_json,
         }
 
-    except Exception as e:
-        print(f"❌ Error in ask_ollama: {e}")
-        return {
-            "error": str(e),
-            "status": "error"
-        }
+    except Exception as exc:  # noqa: BLE001
+        err_msg = str(exc)
+        print(f"❌ ask_ollama failed: {err_msg}")
+        return {"status": "error", "error": err_msg, "function_times_ms": fn_times}
+
+    finally:
+        record_metric(
+            prompt=prompt,
+            start_ts=wall_start,
+            iterations=iterations_used,
+            success=success,
+            error_msg=err_msg,
+            function_times=fn_times,
+        )

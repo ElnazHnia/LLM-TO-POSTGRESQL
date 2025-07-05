@@ -133,6 +133,8 @@ services:
       - ollama
     environment:
       APP_MODULE: src.llm_api:app
+      PG_DSN: postgres://admin:password@postgres:5432/llm_data_db
+      
   
   grafana:
     image: grafana/grafana:latest

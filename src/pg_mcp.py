@@ -92,6 +92,24 @@ def execute_query(request: SQLRequest):
     except Exception as e:
         return {"error": str(e)}
 
+# Endpoint to list all user tables in the public schema
+@app.get("/tables")
+def list_tables():
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_type   = 'BASE TABLE'
+            ORDER BY table_name;
+        """)
+        names = [row[0] for row in cur.fetchall()]
+        cur.close(); conn.close()
+        return {"tables": names}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.post("/grafana_json")
@@ -142,7 +160,7 @@ def create_grafana_dashboard(request: SQLRequest):
             "type": panel_type,
             "datasource": {
                 "type": "grafana-postgresql-datasource",
-                "uid": "aeo8prusu1i4gc"
+                "uid": "cer8a03ztsu0wf"
             },
             "targets": [
                 {

@@ -3,12 +3,15 @@ from pydantic import BaseModel, ValidationError
 import requests
 import json
 from datetime import datetime
-from typing import List,  Dict
+from typing import List, Dict
 import time
 # Import your models (use the fixed models from above)
 from src.models import DashboardSpec, Panel, Target, GridPos, PanelOptions, ReduceOptions
 from rag.context_retriever import get_table_schema, get_table_example 
 from src.metrics import record_metric, time_call
+from collections import Counter, defaultdict
+import re
+import json
 
 app = FastAPI()
 
@@ -21,26 +24,85 @@ class PromptRequest(BaseModel):
 def now_timestamp() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+def fallback_table_match(prompt: str) -> List[str]:
+    mappings = {
+        "customer": "person",
+        "user": "person",
+        "client": "person",
+        "product": "products",
+        "item": "products",
+        "sales": "sales",
+        "transaction": "sales",
+    }
+    found = set()
+    for keyword, table in mappings.items():
+        if keyword in prompt.lower():
+            found.add(table)
+    return list(found)
 
 def extract_table_name_with_llm(prompt: str) -> str:
-    res = requests.post("http://ollama:11434/api/generate", json={
-        "model": "llama3",
-        "prompt": f"You are a SQL assistant.\nGiven this question, extract the table name(s) mentioned.\n\nQuestion: {prompt}\n\nReturn only the table names, comma-separated if more than one. The sales table contains person_id, product_id, sale_date is a DATE, and value. The person table stores id and name of customers. The products table has id and name.  " 
-    },
-    timeout=OLLAMA_TIMEOUT
-    )
-   
-    raw_response = "".join(
-        json.loads(line).get("response", "")
-        for line in res.text.strip().split("\n")
-        if line.strip().startswith("{")
-    ).strip().lower()
-    print("Raw response from table extractor:", raw_response)
-    #  Extract just the table names
-    table_line = raw_response.split("\n")[-1]  # get the last line (which should contain only the names)
-    clean_tables = [name.strip() for name in table_line.split(",") if name.strip().isidentifier()]
+    """Use LLM to extract table names from the prompt."""
+    try:
+        # Try the OpenAI-compatible API first
+        response = requests.post(
+            "http://ollama:11434/v1/chat/completions",
+            json={
+                "model": "llama3",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"You are a SQL assistant.\nGiven this question, extract the table name(s) mentioned.\n\nQuestion: {prompt}\n\nReturn only the table names, comma-separated if more than one. The sales table contains person_id, product_id, sale_date is a DATE, and value. The person table stores id and name of customers or deliverer. The products table has id and name."
+                    }
+                ],
+                "temperature": 0.1,
+                "stream": False
+            },
+            timeout=OLLAMA_TIMEOUT
+        )
+        
+        if response.status_code == 200:
+            # OpenAI-compatible API response
+            result = response.json()
+            raw_response = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip().lower()
+        else:
+            # Fallback to native Ollama API
+            response = requests.post(
+                "http://ollama:11434/api/generate",
+                json={
+                    "model": "llama3",
+                    "prompt": f"You are a SQL assistant.\nGiven this question, extract the table name(s) mentioned.\n\nQuestion: {prompt}\n\nReturn only the table names, comma-separated if more than one. The sales table contains person_id, product_id, sale_date is a DATE, and value. The person table stores id and name of customers. The products table has id and name.",
+                    "stream": False,
+                    "options": {"temperature": 0.1}
+                },
+                timeout=OLLAMA_TIMEOUT
+            )
+            
+            if response.status_code != 200:
+                raise Exception(f"Ollama API error: {response.status_code} - {response.text}")
+            
+            result = response.json()
+            raw_response = result.get("response", "").strip().lower()
+        
+        print("Raw response from table extractor:", raw_response)
+        
+        # Extract just the table names
+        table_line = raw_response.split("\n")[-1]  # get the last line (which should contain only the names)
+        clean_tables = [name.strip() for name in table_line.split(",") if name.strip().isidentifier()]
 
-    return ",".join(clean_tables)
+        return ",".join(clean_tables)
+        
+    except Exception as e:
+        print(f"Error in extract_table_name_with_llm: {e}")
+        # Fallback to basic table extraction
+        prompt_lower = prompt.lower()
+        tables = []
+        if "sales" in prompt_lower or "sale" in prompt_lower:
+            tables.append("sales")
+        if "person" in prompt_lower or "customer" in prompt_lower:
+            tables.append("person")
+        if "product" in prompt_lower:
+            tables.append("products")
+        return ",".join(tables) if tables else "sales"
 
 
 def create_structured_prompt(prompt: str, schema_parts: List[str], timestamp: str) -> str:
@@ -63,7 +125,7 @@ def create_structured_prompt(prompt: str, schema_parts: List[str], timestamp: st
                     "id": "Integer - Panel ID",
                     "type": "String - Panel type (barchart, piechart, table, timeseries, stat)",
                     "title": "String - Panel title",
-                    "datasource": {"type": "postgres", "uid": "aeo8prusu1i4gc"},
+                    "datasource": {"type": "postgres", "uid": "cer8a03ztsu0wf"},
                     "targets": [
                         {
                             "refId": "A",
@@ -141,8 +203,6 @@ CRITICAL PANEL TYPE RULES - MUST BE FOLLOWED EXACTLY:
    - 5 panels: First 4 panels w=12 (2 rows), last panel w=24 (full width)
    
    CRITICAL: Never put a single panel with w=12 alone on a row - it must be either paired (w=12) or full width (w=24)
-
-
 
 7. Dashboard title MUST include the exact timestamp: "[Description] - {timestamp}"
 
@@ -227,7 +287,6 @@ CRITICAL SQL FIXES NEEDED:
    
    CRITICAL: Never put a single panel with w=12 alone on a row - it must be either paired (w=12) or full width (w=24)
 
-
 SPECIFIC FIXES FOR YOUR SQL:
 - Change: GROUP BY day ORDER BY day
 - To: GROUP BY DATE_TRUNC('day', sale_date) ORDER BY DATE_TRUNC('day', sale_date)
@@ -238,48 +297,61 @@ Return ONLY the corrected JSON. No explanations.
 
 
 def call_ollama_structured(prompt: str) -> dict:
-    """Call Ollama with structured output request"""
+    """Call Ollama with a structured prompt and parse JSON response."""
     try:
-        response = requests.post(            # ← 8 spaces (aligned with the rest)
-            "http://ollama:11434/api/generate",
+        # Try OpenAI-compatible API first
+        response = requests.post(
+            "http://ollama:11434/v1/chat/completions",
             json={
                 "model": "llama3",
-                "prompt": prompt,
-                "format": "json",
-                "stream": False,
-                "options": {
-                    "temperature": 0.1,      # Lower temperature for more consistent JSON
-                    "top_p": 0.9
-                }
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "top_p": 0.9,
+                "stream": False
             },
-            timeout=OLLAMA_TIMEOUT           # 90 s (or whatever you set)
+            timeout=OLLAMA_TIMEOUT
         )
 
-        if response.status_code != 200:
-            raise Exception(f"Ollama API error: {response.status_code}")
+        if response.status_code == 200:
+            result = response.json()
+            message = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        
 
-        result = response.json()
-        llm_output = result.get("response", "")
-
-        # Try to parse as JSON
+        # Attempt to parse it as JSON
         try:
-            return json.loads(llm_output)
+            return json.loads(message)
         except json.JSONDecodeError as e:
-            print(f"JSON decode error: {e}")
-            print(f"Raw LLM output: {llm_output}")
+            print("❌ JSON decode error:", e)
+            print("🔎 Raw output from model:\n", message)
+        
+    
+           
+            # Extract the largest JSON block in the response
+            # json_match = re.search(r'{[\s\S]*}', message)
+            json_match = re.search(r'{[\s\S]+}', message)
+
+            if json_match:
+                try:
+                    return json.loads(json_match.group())
+                except json.JSONDecodeError as inner_e:
+                    print("⚠️ Still failed parsing extracted JSON:", inner_e)
+
             raise Exception(f"Invalid JSON from LLM: {str(e)}")
+
     except Exception as e:
-        print(f"Error calling Ollama: {e}")
+        print(f"🔥 Error calling Ollama: {e}")
         raise
 
 
 def validate_with_pydantic(dashboard_data: dict) -> tuple[bool, str, DashboardSpec]:
     """Validate dashboard data with Pydantic and return success status, error message, and object"""
     try:
-        dashboard = DashboardSpec(**dashboard_data)
-        return True, "", dashboard
+        # Validate the dashboard data against the Pydantic model
+        spec = DashboardSpec(**dashboard_data)
+        return True, "", spec
     except ValidationError as e:
         return False, str(e), None
+
 
 def ask_ollama_if_valid(
         prompt: str,
@@ -314,30 +386,29 @@ DASHBOARD JSON
 {dashboard_json}
 ───────────────────────────────────────────────
 VALIDATION CHECK-LIST
-1 Title must equal “[Description] – {timestamp}”
 
-2 Panel **type ⇄ format** mapping *(both must be present)*  
+1 Panel **type ⇄ format** mapping *(both must be present)*  
    • barchart   → format = table  
    • piechart   → format = table  
    • table      → format = table  
    • stat       → format = table  
    • timeseries → format = time_series **AND** SQL must alias the timestamp as `time`
 
-3 Alias sanity  
+2 Alias sanity  
    • Build *DeclaredAlias* = every alias/table in FROM/JOIN  
-   • Build *UsedAlias*     = every prefix before “.” in SELECT/WHERE/GROUP/ORDER  
-   • If UsedAlias ∉ DeclaredAlias → “Alias <x> not declared.”
+   • Build *UsedAlias*     = every prefix before "." in SELECT/WHERE/GROUP/ORDER  
+   • If UsedAlias ∉ DeclaredAlias → "Alias <x> not declared."
 
-4 Allowed tables: **sales, person, products** (plural) only.
+3 Allowed tables: **sales, person, products** (plural) only.
 
-5 No semicolon as the very last SQL character.
+4 No semicolon as the very last SQL character.
 
-6 Bar/Pie numeric group fields must end with `::text`.
+5 Bar/Pie numeric group fields must end with `::text`.
 
-7 Every alias used in SELECT/WHERE/GROUP/ORDER
+6 Every alias used in SELECT/WHERE/GROUP/ORDER
    must be declared in a FROM/JOIN clause.
 
-8 Singular table names (sale, product, …) are invalid.
+7 Singular table names (sale, product, …) are invalid.
 
 OUTPUT  
 • List every failure, one per line  
@@ -346,32 +417,80 @@ OUTPUT
 """.strip()
 
     try:
-        rsp = requests.post(
-            "http://ollama:11434/api/generate",
+        # Try OpenAI-compatible API first
+        response = requests.post(
+            "http://ollama:11434/v1/chat/completions",
             json={
                 "model": "llama3",
-                "prompt": check_prompt,
+                "messages": [{"role": "user", "content": check_prompt}],
                 "stream": False,
                 "options": {"temperature": 0.1},
             },
             timeout=OLLAMA_TIMEOUT,
         )
-        if rsp.status_code != 200:
-            raise RuntimeError(f"Ollama API error: {rsp.status_code}")
-
-        result_text = rsp.json().get("response", "").strip()
+        
+        if response.status_code == 200:
+            result = response.json()
+            result_text = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+       
+        
         print("\n── LLM output ──────────────────────────────\n"
             + result_text +
             "\n────────────────────────────────────────────")
 
-        # grab every line that begins with “ERROR”
+        # grab every line that begins with "ERROR"
         error_lines = [
             line.strip()
             for line in result_text.splitlines()
             if line.strip().lower().startswith("error")
         ]
+        
+        try:
+            parsed_json = json.loads(dashboard_json)
+            panels = parsed_json["dashboard"]["panels"]
 
-        if not error_lines:                # ⇐ the model answered “OK”
+            sql_to_types = defaultdict(list)
+            for p in panels:
+                raw_sql = p['targets'][0]['rawSql'].strip().lower()
+                panel_type = p['type']
+                sql_to_types[raw_sql].append(panel_type)
+
+            for raw_sql, types in sql_to_types.items():
+                # Extract common keywords from SQL
+                keywords = re.findall(
+                    r'\b(?:sum|avg|average|total|count|customer|product|sales|value|date)\b',
+                    raw_sql
+                )
+                if not keywords:
+                    continue
+
+                keyword_set = set(keywords)
+                if not keyword_set:
+                    continue
+
+                prompt_lower = prompt.lower()
+
+                # Count overlapping conceptual matches in prompt
+                match_count = 0
+                for line in re.split(r'[.,;\n]', prompt_lower):
+                    line_words = set(re.findall(r'\b\w+\b', line))
+                    overlap = keyword_set & line_words
+                    if len(overlap) >= max(2, len(keyword_set) // 2):  # 50%+ overlap
+                        match_count += 1
+
+                unique_types = set(types)
+
+                if match_count > len(unique_types):
+                    return False, (
+                        f"User requested the concept '{' '.join(sorted(keyword_set))}' approximately {match_count} times, "
+                        f"but only {len(unique_types)} unique panel types were generated for it."
+                    )
+
+        except Exception as e:
+            print(f"⚠️ Additional logic validation skipped due to parsing issue: {e}")
+
+        
+        if not error_lines:                # ⇐ the model answered "OK"
             return True, ""
 
         # otherwise return the whole list (joined with new-lines)
@@ -379,9 +498,6 @@ OUTPUT
 
     except Exception as e:
         return False, f"Ollama error: {e}"
-
-
-
 
 
 @app.post("/ask")
@@ -418,12 +534,33 @@ def ask_ollama(prompt_request: PromptRequest):
         for i in range(1, max_iter + 1):
             iterations_used = i
             ok_struct, err_struct, validated = time_call(fn_times, "pydantic_validate", validate_with_pydantic, dashboard)
+            
             if not ok_struct:
                 corr_prompt = time_call(fn_times, "create_corr_struct", create_correction_prompt, prompt, schema_parts, json.dumps(dashboard), err_struct, ts)
                 dashboard = time_call(fn_times, "ollama_fix_struct", call_ollama_structured, corr_prompt)
                 continue
-
-            ok_logic, err_logic = time_call(fn_times, "llm_logic_validate", ask_ollama_if_valid, prompt, schema_parts, json.dumps(dashboard), ts)
+            
+            validated_dict = validated.dict(by_alias=True, exclude_none=True)
+            validated_slim = validated.dict(
+                by_alias=True,
+                include={
+                    "dashboard": {               # ─┐ field "dashboard"
+                        "title": True,           #   ├─ keep the whole title field
+                        "panels": {              #   └─ keep only some sub-fields of every panel
+                            "__all__": {"id", "type", "targets"}
+                        },
+                    }
+                },
+            )
+            # targets → keep only refId/format/rawSql
+            for p in validated_slim["dashboard"]["panels"]:
+                p["targets"] = [
+                    {k: t[k] for k in ("refId", "format", "rawSql")} for t in p["targets"]
+                ]
+            print(f"validated slim: {validated_slim}")
+            ok_logic, err_logic = time_call(fn_times, "llm_logic_validate", ask_ollama_if_valid, prompt, schema_parts, json.dumps(validated_slim), ts)
+            print(f"validated slim: {validated_slim}, ok_logic: {ok_logic}, err_logic: {err_logic}")
+            
             if not ok_logic:
                 corr_prompt = time_call(fn_times, "create_corr_logic", create_correction_prompt, prompt, schema_parts, json.dumps(dashboard), err_logic, ts)
                 dashboard = time_call(fn_times, "ollama_fix_logic", call_ollama_structured, corr_prompt)
@@ -435,9 +572,45 @@ def ask_ollama(prompt_request: PromptRequest):
         if not success:
             raise RuntimeError("Max validation iterations reached; dashboard still invalid")
 
-        # 4)  Push to Grafana
-        grafana_resp = time_call(fn_times, "post_grafana", requests.post, "http://grafana-mcp:8000/create_dashboard", headers={"Content-Type": "application/json"}, json=validated.dict(by_alias=True))
-        grafana_json = grafana_resp.json()
+        # 4)  Push to Grafana - Enhanced error handling
+        print(f"Pushing dashboard to Grafana...")
+        print(f"Dashboard data: {json.dumps(validated.dict(by_alias=True), indent=2)}")
+        
+        try:
+            grafana_resp = time_call(
+                fn_times, 
+                "post_grafana", 
+                requests.post, 
+                "http://grafana-mcp:8000/create_dashboard", 
+                headers={"Content-Type": "application/json"}, 
+                json=validated.dict(by_alias=True),
+                timeout=30  # Add timeout for Grafana request
+            )
+            
+            print(f"Grafana response status: {grafana_resp.status_code}")
+            print(f"Grafana response headers: {grafana_resp.headers}")
+            print(f"Grafana response text: {grafana_resp.text}")
+            
+            # Check if response is successful
+            if grafana_resp.status_code != 200:
+                raise Exception(f"Grafana API error: {grafana_resp.status_code} - {grafana_resp.text}")
+            
+            # Check if response has content
+            if not grafana_resp.text.strip():
+                raise Exception("Empty response from Grafana API")
+            
+            # Try to parse JSON
+            try:
+                grafana_json = grafana_resp.json()
+            except json.JSONDecodeError as e:
+                raise Exception(f"Invalid JSON from Grafana API: {e}. Response: {grafana_resp.text}")
+            
+        except requests.exceptions.Timeout:
+            raise Exception("Timeout connecting to Grafana service")
+        except requests.exceptions.ConnectionError:
+            raise Exception("Connection error to Grafana service - is it running?")
+        except Exception as e:
+            raise Exception(f"Grafana API error: {str(e)}")
 
         return {
             "status": "success",
@@ -445,6 +618,7 @@ def ask_ollama(prompt_request: PromptRequest):
             "timestamp": ts,
             "function_times_ms": fn_times,
             "grafana_result": grafana_json,
+            "validated": validated.dict(by_alias=True, exclude_none=True),
         }
 
     except Exception as exc:  # noqa: BLE001

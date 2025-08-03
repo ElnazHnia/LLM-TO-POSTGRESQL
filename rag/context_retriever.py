@@ -54,7 +54,7 @@ def get_grafana_json_template() -> str:
             "title": "<Panel Title>",
             "datasource": {
                 "type": "postgres",
-                "uid": "cer8a03ztsu0wf"
+                "uid": "desl46jinre9sb"
             },
             "targets": [
             {

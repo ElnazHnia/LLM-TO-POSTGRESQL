@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import psycopg2
 import os
+import re
 import requests
 from dotenv import load_dotenv
 from typing import List
@@ -93,6 +94,26 @@ def execute_query(request: SQLRequest):
         return {"error": str(e)}
 
 # Endpoint to list all user tables in the public schema
+def is_business_table(table_name):
+    t = table_name.lower()
+    patterns = [
+        r'^alembic_',
+        r'_metrics$',
+        r'_tags$',
+        r'version',
+        r'^trace_',
+        r'^latest_',
+        r'^registered_',
+        r'datasets',
+        r'experiments',
+        r'inputs',
+        r'metrics',
+        r'params',
+        r'runs',
+        r'tags',
+    ]
+    return not any(re.search(p, t) for p in patterns)
+
 @app.get("/tables")
 def list_tables():
     try:
@@ -106,8 +127,10 @@ def list_tables():
             ORDER BY table_name;
         """)
         names = [row[0] for row in cur.fetchall()]
+        # filter here!
+        business_tables = [t for t in names if is_business_table(t)]
         cur.close(); conn.close()
-        return {"tables": names}
+        return {"tables": business_tables}
     except Exception as e:
         return {"error": str(e)}
 
@@ -160,7 +183,7 @@ def create_grafana_dashboard(request: SQLRequest):
             "type": panel_type,
             "datasource": {
                 "type": "grafana-postgresql-datasource",
-                "uid": "cer8a03ztsu0wf"
+                "uid": "desl46jinre9sb"
             },
             "targets": [
                 {

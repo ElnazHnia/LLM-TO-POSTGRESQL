@@ -1,0 +1,11 @@
+[sqlfluff]
+# Use Postgres parsing
+dialect = postgres
+
+# Enable Jinja templating so Grafana’s ${…} macros are ignored
+templater = jinja
+
+[sqlfluff:templater:jinja]
+# Grafana uses ${…} for variables, so teach Jinja to recognize them
+variable_start_string = "${"
+variable_end_string   = "}"

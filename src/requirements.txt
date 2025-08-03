@@ -19,3 +19,6 @@ qdrant-client
 
 # Embedding models
 sentence-transformers
+
+sqlfluff==3.3.1
+jinja2

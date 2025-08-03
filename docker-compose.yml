@@ -134,6 +134,9 @@ services:
     environment:
       APP_MODULE: src.llm_api:app
       PG_DSN: postgres://admin:password@postgres:5432/llm_data_db
+      MCP_URL: http://mcp_server:8000
+      OLLAMA_HOST: ollama  
+      OLLAMA_PORT: 11434
     volumes:
       - .:/app 
       

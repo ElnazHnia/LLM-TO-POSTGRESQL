@@ -10,7 +10,9 @@ class GridPos(BaseModel):
 
 class Datasource(BaseModel):
     type: str = "postgres"
-    uid: str = "aeo8prusu1i4gc"
+    # uid: str = "aeo8prusu1i4gc"
+    uid: str = "desl46jinre9sb" 
+    
 
 class Target(BaseModel):
     refId: str = "A"
@@ -42,6 +44,14 @@ class Panel(BaseModel):
     targets: List[Target]
     gridPos: GridPos
     options: PanelOptions = PanelOptions()
+    maxDataPoints: Optional[int] = None
+    fieldConfig: Optional[Dict[str, Any]] = None
+    # timeFrom: Optional[str] =  "now-5y"
+    # timeTo: Optional[str] = "now"
+    interval: Optional[str] = None         
+    minInterval: Optional[str] = None      
+    relativeTime: Optional[str] = None     
+    timeShift: Optional[str] = None        
 
 class TimeRange(BaseModel):
     from_time: str = Field(alias="from", default="now-5y")

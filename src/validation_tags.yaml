@@ -1,0 +1,213 @@
+tags:
+
+  - id: invalid_table_column_names
+    applies_to: sql
+    triggers_when: '(?s).*'
+    description: >-
+      CRITICAL VIOLATION: Using table or column names that don't exist in the provided schema.
+      The system MUST only use tables and columns that are explicitly defined in the schema.
+    solution: >-
+      MANDATORY SCHEMA VALIDATION - ZERO TOLERANCE FOR INVALID NAMES:
+      
+      BEFORE WRITING ANY SQL, VALIDATE EVERY TABLE AND COLUMN NAME AGAINST THE PROVIDED SCHEMA:
+      
+      ✅ VALIDATION PROCESS:
+      1. Extract ALL table names and column names from the provided schema in the prompt
+      2. Scan SQL for ALL table names - each MUST exist in the provided schema
+      3. Scan SQL for ALL column names - each MUST exist for that specific table in the schema
+      4. Validate ALL JOIN conditions use correct foreign key relationships from the schema
+      5. Replace ANY invalid name with the correct schema equivalent
+
+
+      ❌ COMMON INVALID PATTERNS TO AUTO-CORRECT:
+      - Using table names that don't exist in the schema
+      - Using column names that don't exist for that table
+      - Using shortened/abbreviated table names not in schema
+      - Using column names that seem logical but aren't in the actual schema
+      - Missing required JOINs when referencing foreign key relationships
+      
+      MANDATORY CORRECTION STEPS:
+      1. If table name doesn't exist in schema → find correct table name from schema
+      2. If column name doesn't exist for table → find correct column name from schema  
+      3. If using foreign key references → ensure proper JOIN with lookup table
+      4. Replace all invalid references with schema-compliant alternatives
+      
+      VALIDATION EXAMPLES:
+      - Check: Does table "X" exist in provided schema? If not, what's the correct name?
+      - Check: Does column "Y" exist in table "X"? If not, what's the correct column?
+      - Check: Are JOINs using correct foreign key column names from schema?  
+  
+  - id: schema_compliance_check
+    applies_to: sql
+    triggers_when: '(?s).*'
+    description: >-
+      CRITICAL: Every SQL query must be validated against the exact schema provided in the prompt.
+    solution: >-
+      SCHEMA COMPLIANCE VALIDATION:
+      
+      STEP 1: EXTRACT SCHEMA FROM PROMPT
+      - Identify all table names from the schema section in the prompt
+      - Identify all column names for each table from the schema section
+      - Note all foreign key relationships (e.g., table1.foreign_id → table2.id)
+      
+      STEP 2: VALIDATE EVERY SQL ELEMENT
+      - Every table name in FROM, JOIN clauses must exist in schema
+      - Every column name in SELECT, WHERE, GROUP BY, ORDER BY must exist in schema
+      - Every JOIN must use correct foreign key column names from schema
+      
+      STEP 3: AUTO-CORRECT INVALID REFERENCES
+      - Replace invalid table names with closest match from schema
+      - Replace invalid column names with correct column names from schema
+      - Add missing JOINs when referencing foreign key relationships
+      
+      VALIDATION CHECKLIST:
+      ✅ All table names exist in provided schema
+      ✅ All column names exist for their respective tables in schema  
+      ✅ All JOINs use correct foreign key column names
+      ✅ No abbreviated or assumed table/column names not in schema
+
+  - id: nonexistent_column_error  
+    applies_to: sql
+    triggers_when: '(?s).*'
+    description: >-
+      CRITICAL: Using column names that don't exist in the schema.
+    solution: >-
+      COLUMN EXISTENCE VALIDATION:
+      - Every column referenced must exist in the provided schema
+      - Check each column against the specific table's column list in schema
+      - Replace non-existent columns with correct column names from schema
+      - Add required JOINs when accessing columns from related tables
+
+  - id: type_format_mismatch
+    applies_to: sql
+    triggers_when: '(?i)date_trunc\([^)]*\)\s+as\s+(?!time)\b'
+    description: >-
+      Panel type/format mismatch: For any `type: timeseries`, the SQL must return a timestamp column aliased as `time`, or Grafana won't render the chart correctly.
+    solution: >-
+      MANDATORY FIX FOR TIMESERIES PANELS:
+      
+      • SQL must alias the time column as `time`:
+        ✅ GOOD: `DATE_TRUNC('day', sale_date) AS time`
+        ❌ BAD: `AS date`, `AS timestamp`, etc.
+
+      • Any SQL for a timeseries panel must contain `AS time` for the timestamp field. If not, this is a violation.
+
+      AUTO-FIX:
+      - Find the `DATE_TRUNC(... AS <alias>)` in SELECT.
+      - If `<alias>` ≠ `time`, replace it with `AS time`
+
+  - id: alias_not_declared
+    applies_to: sql
+    triggers_when: '(?i)\b([a-z]\w*)\.\w+\b(?!\s+as)'
+    description: >-
+      Used alias not declared in FROM/JOIN.
+    solution: >-
+      Declare every table alias you use in SELECT, WHERE, GROUP BY or ORDER BY  
+      in your FROM or JOIN clauses (e.g. `FROM sales s`, then use `s.value`).
+
+  - id: missing_human_name
+    applies_to: sql
+    triggers_when: '\b\w+_(?:id)\b|\b\w+\.id\b'
+    description: >-
+      CRITICAL VIOLATION: Never SELECT raw IDs like `*.id` or `*_id` directly.
+      Replace them with meaningful `.name` fields from related tables.
+      if there is no non aggregated column in the SELECT clause, then this tag should not trigger.
+
+      ✅ ALLOWED: `*.id` in JOINs only.
+      ❌ FORBIDDEN: `*.id` or `*_id` in SELECT clause output.
+
+      ➤ This tag should trigger if SELECT includes:
+      - `<table>.id`
+      - `<table>_id`
+    solution: >-
+      ❌ BAD: SELECT orders.id  
+      ✅ GOOD: SELECT customers.name AS customer_name  
+      → JOIN the referenced table and get `.name`
+
+      REWRITE EXAMPLE:
+      ```sql
+      SELECT orders.id AS order_id
+      FROM orders
+      JOIN sales ON orders.id = sales.order_id
+      ```
+      ➤ Must become:
+      ```sql
+      SELECT customers.name AS customer_name
+      FROM orders
+      JOIN customers ON orders.customer_id = customers.id
+      JOIN sales ON orders.id = sales.order_id
+      ```
+
+     
+  - id: missing_numeric_cast
+    applies_to: sql
+    triggers_when: '(?i)\bGROUP\s+BY\s+\w+_(?:id|month|year)\b'
+    description: >-
+      In **piechart** and **barchart** panels, any numeric or foreign-key column in
+      `GROUP BY` **must** be cast to text…
+    solution: >-
+      Cast your grouping column: `<numeric_column>::text AS <column_name>`
+      ➤ Example: `EXTRACT(YEAR FROM sale_date)::text AS year`
+
+
+  - id: group_by_missing_columns
+    applies_to: sql
+    triggers_when: '(?i)select\s+.*\b(sum|avg|count)\b.*,(?!.*group\s+by).*'
+    description: >-
+      CRITICAL: Trigger this tag only when both aggregate functions and non-aggregated columns appear in the SELECT clause, 
+      and one or more non-aggregated columns are missing from the GROUP BY clause.
+
+      ✅ Do NOT trigger this tag if:
+      - The SELECT clause contains only aggregate functions (e.g., COUNT(*), SUM(value)) — GROUP BY is not required.
+      - The SELECT clause contains only non-aggregated columns — GROUP BY must be omitted.
+
+      ❌ This tag MUST be triggered if:
+      - Aggregate functions are used, AND
+      - A non-aggregated column appears in SELECT but is missing from GROUP BY.
+
+    solution: >-
+      ✅ RULE: GROUP BY is required only when SELECT mixes aggregated and non-aggregated fields.
+
+      🔧 FIX OPTIONS:
+      - Add all non-aggregated SELECT columns to GROUP BY.
+      - OR: Wrap the non-aggregated columns in an aggregate function.
+      - OR: If no aggregate functions are used, remove GROUP BY entirely.
+
+ 
+  - id: panel_type_requirement
+    applies_to: panel
+    triggers_when: '.*'
+    description: >-
+      Panel type must be exactly "barchart", "piechart", etc. (not short forms like "bar", "pie").
+    solution: >-
+      Always use full panel types:
+      • barchart   → not "bar"
+      • piechart   → not "pie"
+      • timeseries → not "line"
+      
+      Replace:
+      ❌ "bar" → ✅ "barchart"
+      ❌ "pie" → ✅ "piechart"
+
+      
+  - id: panel_type_format_mapping
+    applies_to: panel
+    triggers_when: '.*'
+    description: >-
+      Panel type ⇄ format mapping (both must be present).
+    solution: >-
+      Panel **type ⇄ format** mapping *(both must be present)*  
+      • barchart   → format = table  
+      • gauge      → format = table 
+      • piechart   → format = table  
+      • table      → format = table  
+      • stat       → format = table  
+      • timeseries → format = time_series **AND** SQL must alias the timestamp as `time`
+
+  # - id: title_format_requirement
+  #   applies_to: dashboard
+  #   description: >
+  #     Dashboard title must follow specific format with timestamp.
+  #   solution: >
+  #     Title must be: "[Description] - {timestamp}"
+      

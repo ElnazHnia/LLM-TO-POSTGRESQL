@@ -10,7 +10,7 @@ async def main():
     client = MultiServerMCPClient({
         "database_tool": {
             "transport": "streamable_http",
-            "url": "http://localhost:8001/mcp/",  # trailing slash required
+            "url": "http://localhost:8005/mcp/",  # trailing slash required
         }
     })
 

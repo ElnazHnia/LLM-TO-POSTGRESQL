@@ -2,8 +2,9 @@
 fastapi
 uvicorn
 
-# HTTP requests
+# HTTP requests & env
 requests
+python-dotenv
 
 # Database connection
 psycopg2-binary
@@ -20,5 +21,39 @@ qdrant-client
 # Embedding models
 sentence-transformers
 
+# SQL linter/fixer
 sqlfluff==3.3.1
+
+# Templating
 jinja2
+
+# MCP & LangChain adapters
+fastapi-mcp
+
+
+# Core LLM toolkit
+#langchain>=0.0.300
+
+# Existing requirements
+fastapi
+pydantic
+requests
+python-multipart
+uvicorn
+
+# Enhanced MCP and LangChain integration
+langchain-ollama>=0.1.0
+langchain-mcp-adapters>=0.1.0
+langgraph>=0.2.0
+langchain>=0.1.0
+langchain-core>=0.1.0
+langchain-community>=0.0.20
+
+# Additional dependencies for tool orchestration
+asyncio
+aiohttp
+websockets
+
+# Optional: For better JSON parsing and validation
+jsonschema
+pyyaml

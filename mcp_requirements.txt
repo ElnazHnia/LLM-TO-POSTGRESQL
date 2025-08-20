@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+psycopg2-binary
+requests
+fastapi-mcp
+langchain-ollama
+langchain-core
+langchain-community

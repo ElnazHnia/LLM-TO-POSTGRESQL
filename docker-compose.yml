@@ -26,7 +26,8 @@ services:
     networks:
       - llm-docker-setup_default
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -p ${POSTGRES_PORT} -d ${POSTGRES_DATABASE} -h localhost"]
+      # test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -p ${POSTGRES_PORT} -d ${POSTGRES_DATABASE} -h localhost"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DATABASE} -h localhost"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -96,26 +97,61 @@ services:
   #     --artifacts-destination s3://${MLFLOW_BUCKET_NAME}
   #     --gunicorn-opts "--log-level debug --timeout 900 --graceful-timeout 120"
 
+  # mcp_server:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.mcp
+  #   command: uvicorn src.pg_mcp:app --host 0.0.0.0 --port 8000
+  #   ports:
+  #     - "8001:8000"
+  #   networks:
+  #     - llm-docker-setup_default
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   environment:
+  #     POSTGRES_HOST: postgres
+  #     APP_MODULE: src.pg_mcp:app
+  #     POSTGRES_DATABASE: llm_data_db
+  #     POSTGRES_USER: admin
+  #     POSTGRES_PASSWORD: password
+  #     POSTGRES_PORT: 5432
+  #   env_file:
+  #     - .env
+  #   healthcheck:
+  #     test:       ["CMD-SHELL", "curl -fs http://localhost:8000/health || exit 1"]
+  #     interval:    10s
+  #     timeout:     5s
+  #     retries:     5
+  #     start_period: 10s
+
+  
   mcp_server:
     build:
       context: .
       dockerfile: Dockerfile.mcp
-    ports:
-      - "8001:8000"
-    networks:
-      - llm-docker-setup_default
-    depends_on:
-      - postgres
+    command: uvicorn src.pg_mcp:app --host 0.0.0.0 --port 8000 --log-level debug
+    expose:
+      - "8000"                     # expose to other containers only (OK)
     environment:
-      APP_MODULE: src.pg_mcp:app
-      POSTGRES_DATABASE: llm_data_db
+      POSTGRES_HOST: postgres      # <- match service name
+      POSTGRES_PORT: "5432"
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: password
-      POSTGRES_PORT: 5432
-    env_file:
-      - .env   # ✅ Load this file
+      POSTGRES_DATABASE: llm_data_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # keep your python socket check or use curl; either works
+      test: ["CMD-SHELL", "python - <<'PY'\nimport socket,sys\ns=socket.socket(); s.settimeout(1)\ntry:\n  s.connect(('127.0.0.1',8000)); sys.exit(0)\nexcept Exception:\n  sys.exit(1)\nPY"]
+      interval: 5s
+      timeout: 2s
+      retries: 20
+    networks:
+      - llm-docker-setup_default
 
-                       
+                         
 
   fastapi:
     build:
@@ -128,17 +164,24 @@ services:
     env_file:
       - .env
     depends_on:
-      # - mlflow
-      - mcp_server
-      - ollama
+      mcp_server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
     environment:
       APP_MODULE: src.llm_api:app
       PG_DSN: postgres://admin:password@postgres:5432/llm_data_db
       MCP_URL: http://mcp_server:8000
-      OLLAMA_HOST: ollama  
-      OLLAMA_PORT: 11434
+      OLLAMA_MODEL: llama3.2:3b
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_JSON_TIMEOUT: "300"   # <-- no space
+      OLLAMA_TIMEOUT: "300"        # <-- no space
     volumes:
-      - .:/app 
+      - .:/app
+      # Mount your host’s Ollama models into the container
+      - ${HOME}/.ollama:/root/.ollama:ro
       
   
   grafana:

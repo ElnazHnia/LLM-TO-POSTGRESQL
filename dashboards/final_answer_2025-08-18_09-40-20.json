@@ -1,0 +1,12 @@
+{
+  "results": [
+    {
+      "sql": "SELECT p.name::text AS person, AVG(s.value) AS avg_sales FROM sales s JOIN person p ON s.person_id=p.id GROUP BY p.name ORDER BY avg_sales DESC",
+      "viz": {
+        "type": "piechart",
+        "format": "table",
+        "title": "Average Sales per Person"
+      }
+    }
+  ]
+}

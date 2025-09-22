@@ -1,38 +1,250 @@
+
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, ValidationError
-import os, time, re, json, asyncio, requests
+from pydantic import BaseModel, Field, ValidationError
+import os, re, json, ast, time, asyncio, requests, logging, logging.config, httpx
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Callable, Type, Literal
+from contextlib import suppress
 from src.metrics import record_metric, time_call
 from src.models import DashboardSpec
-# LLM / LangChain
+# ----------------------------
+# Logging
+# ----------------------------
+LOG_DIR = os.getenv("LOG_DIR", "/app/logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {"format": "%(asctime)s %(levelname)s %(name)s - %(message)s"}
+    },
+    "handlers": {
+        "rotating_file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": os.path.join(LOG_DIR, "app.log"),
+            "maxBytes": 5_000_000,
+            "backupCount": 5,
+            "encoding": "utf-8",
+            "formatter": "default",
+        },
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+        },
+    },
+    "root": {
+        "level": "INFO",
+        "handlers": ["console", "rotating_file"],
+    },
+}
+logging.config.dictConfig(LOGGING)
+logger = logging.getLogger(__name__)
+
+# ----------------------------
+# LangChain / LLM
+# ----------------------------
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain.callbacks.base import BaseCallbackHandler
-from langchain.callbacks.manager import CallbackManager
 from langchain.tools import BaseTool
+from langchain.output_parsers import ResponseSchema, StructuredOutputParser
+from langchain_core.runnables import RunnableSequence, RunnableLambda
+import langchain
+langchain.debug = True
+logging.getLogger("langchain").setLevel(logging.WARNING)
 
-# MCP
-from langchain_mcp_adapters.client import MultiServerMCPClient
+try:
+    from langchain_core.tools import ToolException
+except Exception:
+    from langchain.tools.base import ToolException  # type: ignore
 
 # ----------------------------
-# FastAPI app + config
+# App config
 # ----------------------------
 app = FastAPI()
-# Time budget (seconds) for Ollama to return the dashboard JSON
-OLLAMA_JSON_TIMEOUT = int(os.getenv("OLLAMA_JSON_TIMEOUT") or os.getenv("OLLAMA_TIMEOUT", "300"))
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
-MCP_URL = os.getenv("MCP_URL", "http://mcp_server:8000")
 OLLAMA_HTTP_URL = os.getenv("OLLAMA_HTTP_URL") or f"{OLLAMA_BASE_URL.rstrip('/')}/api/chat"
-OLLAMA_TIMEOUT  = int(os.getenv("OLLAMA_JSON_TIMEOUT") or os.getenv("OLLAMA_TIMEOUT", "300"))
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_JSON_TIMEOUT") or os.getenv("OLLAMA_TIMEOUT", "300"))
+MCP_URL = os.getenv("MCP_URL", "http://mcp_server:8000")
+MAX_PANELS = int(os.getenv("MAX_PANELS", "10"))
+
 # ----------------------------
-# Models / helpers
+# HTTP MCP client tools
+# ----------------------------
+
+MCP_HTTP_URL = os.getenv("MCP_HTTP_URL", "http://code-pg:8000")  # service name/port for code-pg.py
+
+class HttpListTables:
+    async def arun(self, _):
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(f"{MCP_HTTP_URL}/tables")
+            # ListTablesGuard expects a JSON string
+            return json.dumps({"tables": r.json()} if isinstance(r.json(), list) else r.json())
+
+class HttpSchema:
+    async def arun(self, payload):
+        table = (payload or {}).get("table_name")
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(f"{MCP_HTTP_URL}/schema/{table}")
+            return json.dumps(r.json())
+
+class HttpExecute:
+    async def arun(self, payload):
+        sql = (payload or {}).get("sql")
+        sql_list = [sql] if isinstance(sql, str) else sql
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.post(f"{MCP_HTTP_URL}/execute", json={"sql": sql_list})
+            return json.dumps(r.json())
+
+# ----------------------------
+# Default system text
+# ----------------------------
+DEFAULT_SYSTEM_TEXT = (
+    "You are a SQL analysis agent with MCP tools:\n"
+    "- sql.list_tables()\n"
+    "- sql.schema(table_name)\n"
+    "- sql.query(sql)\n\n"
+    "{tools}\n\n"
+    "Valid tool names: {tool_names}\n\n"
+    "DE-DUP RULE (RUNTIME)\n"
+    "- Never call sql.schema twice for the same table in one run.\n"
+    "- If a schema is already present in the agent_scratchpad OR the tool returns {{\"cached\": true}}, skip additional calls for that table.\n"
+    "- Call sql.list_tables at most once and ONLY as the first step if table discovery is truly required.\n\n"
+    "TIME GROUPING (HARD RULE):\n"
+    "- Never reference a bare column named \"year\".\n"
+    "- If you need yearly grouping, derive a label and reuse it:\n"
+    "SELECT date_trunc('year', s.sale_date) AS year, SUM(s.value) AS total\n"
+    "FROM sales s\n"
+    "GROUP BY year\n"
+    "- For monthly/weekly/daily, use date_trunc('month'|'week'|'day') similarly.\n"
+    "- Always GROUP BY the SELECT alias (e.g., GROUP BY year), not the raw function again.\n"
+    "FORMAT HARD RULE:\n"
+    "- After every \"Thought:\" you MUST immediately write either:\n"
+    "a) \"Action:\" followed by a valid tool call and \"Action Input: {{...}}\" \n"
+    "b) \"Final Answer:\" followed by the final JSON on ONE LINE\n"
+    "- NEVER include backticks, code fences, or extra prose (e.g., \"Here is the corrected output:\").\n"
+    "CHART COUNT CONTRACT (HARD RULES):\n"
+    "- Determine the set of chart INTENTS explicitly requested by the human. Let N = number of distinct chart intents (do not invent new ones).\n"
+    "- Execute at most N queries (one per intent), in the same order as the human request.\n"
+    "- Final Answer MUST contain exactly N items in \"results\" (no more, no less).\n"
+    "- EXTRA=NO is a HARD GATE.\n"
+    "- RULE: Never mix Final Answer with Action/Observation in the same message.\n"
+    "- If the user asks for more than MAX_PANELS (MAX_PANELS=10), finish with:\n"
+    "  Final Answer: {{ \"error\": \"Requested X charts exceeds MAX_PANELS=10. Please reduce or split the request.\" }}\n\n"
+    "TRACE FORMAT (CRITICAL)\n"
+    "Thought: <brief reasoning> | Checklist: CAST=OK; AGG=OK; GBY=OK; EXTRA=NO\n"
+    "Action: <one of: sql.list_tables, sql.schema, sql.query>\n"
+    "Action Input: {{ \"...\": \"...\" }}\n"
+    "Observation: <tool result or ERROR: ...>\n"
+    "Final Answer: {{ \"results\": [ {{ \"sql\":\"...\", \"viz\":{{ \"type\":\"<barchart|line|piechart|table|stat|gauge>\", \"format\":\"<table|time_series>\", \"title\":\"<short>\" }} }} ] }}\n\n"
+    "------------------------------------------------------------\n"
+    "SQL LINT CHECKLIST (MANDATORY in Thought line):\n"
+    "- CAST=OK → non-aggregate label expressions in SELECT may use ::text for readability; do not require ::text in GROUP BY.\n"
+    "- AGG=OK → never cast aggregates.\n"
+    "- GBY=OK → every non-aggregate expression in SELECT must be grouped; in PostgreSQL you may GROUP BY the SELECT alias (preferred) or repeat the expression; never use positional indices.\n"
+    "- EXTRA=NO → there are no auxiliary/duplicate queries for the same intent.\n\n"
+    "SELECT COLUMN POLICY (HUMAN-FRIENDLY OUTPUT) — HARD REQUIREMENT:\n"
+    "- Do NOT select raw primary key or foreign key columns (named \"id\" or ending with \"_id\") in SELECT.\n"
+    "- JOIN to referenced tables and select a human-readable field with ::text and a clear alias:\n"
+    "  sales.person_id   → JOIN person p ON s.person_id=p.id → p.name::text AS person\n"
+    "  sales.product_id  → JOIN products pr ON s.product_id=pr.id → pr.name::text AS product\n"
+    "  sales.payment_id  → JOIN payment_type pt ON s.payment_id=pt.id → pt.method::text AS payment_type\n\n"
+    "BAR/PIE CHART POLICY (HARD REQUIREMENT):\n"
+    "- Queries for 'barchart' and 'piechart' MUST include a non-aggregate column in the SELECT list.\n"
+    "- This non-aggregate column MUST also be present in the GROUP BY clause.\n"
+    "- The query MUST also include at least one aggregate column (e.g., SUM, AVG, COUNT).\n"
+    "- Use a clear alias for both the non-aggregate and aggregate columns for readability.\n\n"
+    "CASTING POLICY (HARD REQUIREMENT):\n"
+    "- It’s fine (but not mandatory) to cast label expressions in SELECT to ::text for readability.\n"
+    "- Do NOT force ::text inside GROUP BY; when SELECT has `p.city::text AS city`, `GROUP BY city` is valid in PostgreSQL.\n"
+    "- Never cast aggregates; never cast numeric/boolean literals/expressions.\n"
+    "- If you build a time label (e.g., DATE_TRUNC(...)), cast it to ::text in the SELECT; you may GROUP BY the alias.\n\n"
+    "GROUP BY / ORDER BY POLICY:\n"
+    "- No positional indices; use aliases or full expressions.\n"
+    "- PostgreSQL allows ORDER BY and GROUP BY to reference SELECT output names; prefer `GROUP BY <alias>` when you aliased a label in SELECT.\n\n"
+    "TOOL CALL SHAPES (STRICT):\n"
+    "- Action: sql.list_tables\n"
+    "  Action Input: {{}}\n"
+    "- Action: sql.schema\n"
+    "  Action Input: {{ \"table_name\": \"<exact name>\" }}\n"
+    "  Observation will include: {{ \"schema\":[ \"... (type)\" ], \"columns\":[ \"...\" ], \"cached\": <bool> }}\n"
+    "- Action: sql.query\n"
+    "  Action Input: {{ \"sql\":\"<full SQL>\", \"chart_type\":\"barchart|line|piechart|table|stat|gauge\", \"format\":\"table|time_series\" }}\n\n"
+    "LIST_TABLES USAGE:\n"
+    "- Call at most once and ONLY as the first step if you truly need to discover tables. Never call after any schema has been retrieved.\n\n"
+    "WORKFLOW:\n"
+    "- Determine the minimal set of chart intents (max = MAX_PANELS) and handle them in order.\n"
+    "- For each intent:\n"
+    "  1) Call sql.schema() ONCE for every table you will reference.\n"
+    "  2) Build ONE SQL that satisfies CAST/GBY and the SELECT COLUMN POLICY.\n"
+    "  3) Call sql.query once.\n"
+    "- As soon as all required schemas are present for the requested intents, STOP exploring and MOVE to sql.query calls, then emit Final Answer.\n\n"
+    "SCHEMA-STRICT MODE:\n"
+    "- Only reference columns you personally saw via sql.schema() this run (from the \"columns\" array).\n\n"
+    "ERROR BEHAVIOR:\n"
+    "- If an Observation starts with \"ERROR:\" while executing SQL, fix the SQL once and retry sql.query for that intent, then continue.\n"
+    "- If a tool indicates a cached schema, DO NOT treat it as an error; proceed.\n\n"
+    "FINAL OUTPUT SHAPE (ENFORCEMENT)\n"
+    "- On completion, emit ONE line:\n"
+    "  Final Answer: {{ \"results\": [ {{ \"sql\":\"...\", \"viz\":{{ \"type\":\"...\", \"format\":\"...\", \"title\":\"...\" }} }}, ... ] }}\n"
+    "- The length of \"results\" MUST equal N. Never include more than N items even if you executed extra queries.\n\n"
+    "FINAL OUTPUT (SUCCESS) — one line only:\n"
+    "Final Answer: {{ \"results\":[ {{ \"sql\":\"<SQL 1>\", \"viz\":{{ \"type\":\"<barchart|line|piechart|table|stat|gauge>\", \"format\":\"<table|time_series>\", \"title\":\"<short label>\" }} }}, ... ] }}\n\n"
+    "FINAL OUTPUT (ERROR) — one line only:\n"
+    "Final Answer: {{ \"error\":\"<clear message about what is missing or ambiguous>\" }}\n"
+)
+
+
+# ----------------------------
+# Output parsing (StructuredOutputParser)
+# ----------------------------
+response_schemas = [
+    ResponseSchema(
+        name="results",
+        description=(
+            "A JSON array with EXACTLY N items (N = number of chart intents). "
+            "Each item is an object: {"
+            '"sql": string (the full SQL to run), '
+            '"viz": {'
+            '"type": "barchart|line|piechart|table|stat|gauge", '
+            '"format": "table|time_series", '
+            '"title": string'
+            "}"
+            "}."
+        ),
+    ),
+]
+
+parser = StructuredOutputParser.from_response_schemas(response_schemas)
+FORMAT_INSTRUCTIONS = parser.get_format_instructions()
+
+# ----------------------------
+# Minimal models
 # ----------------------------
 class PromptRequest(BaseModel):
     prompt: str
+    system_text: Optional[str] = Field(
+        default=None,
+        description="Full ReAct system prompt controlling tool order and output"
+    )
 
+
+
+
+class ExecArgs(BaseModel):
+    sql: str = Field(..., description="Full SQL to run")
+    chart_type: Optional[str] = Field(default=None)
+    format: Optional[str] = Field(default=None)
+    title: Optional[str] = Field(default=None)
+
+# ----------------------------
+# Utility helpers
+# ----------------------------
+def now_timestamp() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def _short(obj: Any, maxlen: int = 600) -> str:
     try:
@@ -41,38 +253,36 @@ def _short(obj: Any, maxlen: int = 600) -> str:
         s = str(obj)
     return (s[:maxlen] + "…") if len(s) > maxlen else s
 
+def _remove_code_fences(text: str) -> str:
+    s = (text or "").strip()
+    if s.startswith("```"):
+        s = s.split("\n", 1)[1] if "\n" in s else ""
+        if s.rstrip().endswith("```"):
+            s = s[: s.rfind("```")].rstrip()
+    return s.strip()
 
 def _parse_final_answer_obj(text: str) -> Optional[dict]:
-    """Extract and parse the FIRST top-level JSON object after 'Final Answer:'.
-    Ignores any trailing notes/comments the model appends after the JSON.
-    """
+    """Extract and parse the FIRST top-level JSON object after 'Final Answer:'."""
     if not isinstance(text, str):
         return None
-
     s = text.strip()
     idx = s.lower().find("final answer:")
     if idx != -1:
-        s = s[idx + len("final answer:"):].lstrip()
-
+        s = s[idx + len("final answer:") :].lstrip()
     start = s.find("{")
     if start == -1:
         return None
-
     depth = 0
-    end = None
+    end: Optional[int] = None
     in_str = False
     esc = False
-
     for i, ch in enumerate(s[start:], start):
         if esc:
-            esc = False
-            continue
+            esc = False; continue
         if ch == "\\":
-            esc = True
-            continue
+            esc = True; continue
         if ch == '"':
-            in_str = not in_str
-            continue
+            in_str = not in_str; continue
         if in_str:
             continue
         if ch == "{":
@@ -80,9 +290,7 @@ def _parse_final_answer_obj(text: str) -> Optional[dict]:
         elif ch == "}":
             depth -= 1
             if depth == 0:
-                end = i + 1
-                break
-
+                end = i + 1; break
     candidate = s[start:end] if end else s[start:]
     try:
         return json.loads(candidate)
@@ -90,831 +298,22 @@ def _parse_final_answer_obj(text: str) -> Optional[dict]:
         try:
             return json.loads(candidate.replace("'", '"'))
         except Exception:
-            return None
-
-
-def _extract_all_sql_blocks(text: str) -> List[str]:
-    """Extract multiple SELECT ... FROM ... statements from free text."""
-    if not isinstance(text, str):
-        return []
-    pattern = re.compile(r'(?is)\bselect\b[\s\S]{10,4000}?\bfrom\b[\s\S]{1,4000}?(?=(?:\bselect\b|$))')
-    blocks = []
-    for m in pattern.finditer(text):
-        sql = ' '.join(m.group(0).strip().split())
-        blocks.append(sql)
-    seen = set()
-    unique = []
-    for b in blocks:
-        if b not in seen:
-            seen.add(b)
-            unique.append(b)
-    return unique
-
-
-def _extract_sql_block(text: str) -> Optional[str]:
-    """Find a plausible SQL SELECT... statement inside free text / code blocks."""
-    if not isinstance(text, str):
-        return None
-    m = re.search(r'(?is)sql\s*[:=]\s*(?P<q>"""|\'\'\')\s*(.+?)\s*(?P=q)', text)
-    if m:
-        sql = m.group(2).strip()
-        if 'select' in sql.lower() and 'from' in sql.lower():
-            return ' '.join(sql.split())
-    m = re.search(r'(?is)\bselect\b[\s\S]{10,4000}\bfrom\b[\s\S]{1,4000}', text)
-    if m:
-        sql = m.group(0).strip()
-        return ' '.join(sql.split())
-    return None
-
-
-class DebugCallbackHandler(BaseCallbackHandler):
-    def on_tool_start(self, serialized, input_str, **kwargs):
-        name = (serialized or {}).get("name")
-        print(f"🔧 TOOL START → {name}")
-        if input_str:
-            print(f"   ↳ input_str: {_short(input_str)}")
-        inputs = kwargs.get("inputs") or kwargs.get("kwargs")
-        if inputs:
-            print(f"   ↳ inputs:    {_short(inputs)}")
-
-    def on_tool_end(self, serialized, output, **kwargs):
-        name = (serialized or {}).get("name")
-        print(f"✅ TOOL END   → {name}")
-        print(f"   ↳ output:    {_short(output)}")
-
-
-SYNONYM_MAPPINGS = {
-    "customer":       "person",
-    "user":           "person",
-    "product":        "products",
-    "item":           "products",
-    "sale":           "sales",
-    "order":          "orders",
-    "payment method": "payment_type",
-}
-
-def normalize_synonyms(text: str) -> str:
-    keys = set(SYNONYM_MAPPINGS.keys())
-    keys |= {k + "s" for k in SYNONYM_MAPPINGS.keys()}
-    pattern = rf"(?<!\w)({'|'.join(map(re.escape, sorted(keys, key=len, reverse=True)))})(?!\w)"
-
-    def to_singular(token: str) -> str:
-        t = token.lower()
-        return t[:-1] if t.endswith("s") and t[:-1] in SYNONYM_MAPPINGS else t
-
-    def repl(m):
-        tok = m.group(1)
-        base = to_singular(tok)
-        out = SYNONYM_MAPPINGS.get(base, tok)
-        if tok.lower().endswith("s") and not out.lower().endswith("s"):
-            if out.endswith("y"):
-                out = out[:-1] + "ies"
-            else:
-                out = out + "s"
-        return out if tok.islower() else out.capitalize() if tok.istitle() else out.upper()
-
-    return re.sub(pattern, repl, text, flags=re.IGNORECASE)
-
-
-def now_timestamp() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-
-# ----------------------------
-# Lightweight SQL parsing helpers (for validation)
-# ----------------------------
-_SQL_IDENT = r"[a-zA-Z_][\w]*"
-
-def _extract_tables_and_aliases(sql: str) -> Tuple[List[str], Dict[str, str]]:
-    tables: List[str] = []
-    aliases: Dict[str, str] = {}
-
-    for m in re.finditer(rf"\bFROM\s+({_SQL_IDENT})(?:\s+(?:AS\s+)?({_SQL_IDENT}))?", sql, flags=re.IGNORECASE):
-        tbl = m.group(1)
-        ali = m.group(2)
-        tables.append(tbl)
-        if ali:
-            aliases[ali] = tbl
-
-    for m in re.finditer(rf"\bJOIN\s+({_SQL_IDENT})(?:\s+(?:AS\s+)?({_SQL_IDENT}))?", sql, flags=re.IGNORECASE):
-        tbl = m.group(1)
-        ali = m.group(2)
-        tables.append(tbl)
-        if ali:
-            aliases[ali] = tbl
-
-    seen = set()
-    ordered_tables = []
-    for t in tables:
-        if t not in seen:
-            seen.add(t)
-            ordered_tables.append(t)
-    return ordered_tables, aliases
-
-def _extract_qualified_columns(sql: str) -> List[Tuple[str, str]]:
-    cols: List[Tuple[str, str]] = []
-    for t, c in re.findall(rf"\b({_SQL_IDENT})\.({_SQL_IDENT})\b", sql):
-        cols.append((t, c))
-    return cols
-
-
-# ----------------------------
-# Guards for MCP tools (async-safe)
-# ----------------------------
-class ExecuteQueryGuard(BaseTool):
-    name: str = "execute_query"
-    description: str = (
-        "Run a COMPLETE SQL query. Signature: execute_query(sql: string) – pass the SQL via dict {'sql': '<...>'}. "
-        "No placeholders. No arrays."
-    )
-    inner_tool: Any
-    schema_tool: Optional[Any] = None
-    _schema_cache: Dict[str, Optional[List[str]]] = {}
-
-    _FMT_MAP = {
-        "barchart": "table",
-        "piechart": "table",
-        "table": "table",
-        "timeseries": "time_series",
-        "stat": "table",
-        "gauge": "table",
-        "line": "time_series",
-    }
-
-    def _clean_query_and_passthrough(self, tool_input: Any) -> Tuple[Optional[str], Dict[str, Any]]:
-        extras: Dict[str, Any] = {}
-        if isinstance(tool_input, dict):
-            if "kwargs" in tool_input and isinstance(tool_input["kwargs"], dict):
-                tool_input = tool_input["kwargs"]
-            q = tool_input.get("query")
-            if q is None:
-                q = tool_input.get("sql")
-            for k, v in tool_input.items():
-                if k in ("query", "sql", "kwargs", "args"):
-                    continue
-                extras[k] = v
-            if isinstance(q, list):
-                q = " ".join(str(x) for x in q)
-            if isinstance(q, str):
-                return q.strip(), extras
-            return None, extras
-        if isinstance(tool_input, str):
-            s = tool_input.strip()
-            if s.startswith("{") and s.endswith("}"):
-                try:
-                    obj = json.loads(s)
-                    if isinstance(obj, dict):
-                        return self._clean_query_and_passthrough(obj)
-                except Exception:
-                    pass
-            return s, extras
-        return None, extras
-
-    def _is_placeholder(self, q: str) -> bool:
-        if not q or len(q.strip()) < 12:
-            return True
-        condensed = " ".join(q.upper().split())
-        return condensed in {"SELECT", "FROM", "GROUP BY", "ORDER BY"}
-
-    async def _load_schema(self, table: str) -> Optional[List[str]]:
-        if table in self._schema_cache:
-            return self._schema_cache[table]
-        if not self.schema_tool:
-            self._schema_cache[table] = None
-            return None
-        try:
-            raw = await self.schema_tool.arun(tool_input={"table_name": table})
-        except Exception as e:
-            print(f"⚠️ schema fetch failed for {table}: {e}")
-            self._schema_cache[table] = None
-            return None
-        try:
-            parsed = json.loads(raw) if isinstance(raw, str) else raw
-        except Exception:
-            parsed = raw
-        if isinstance(parsed, str) and parsed.strip().upper().startswith("ERROR"):
-            self._schema_cache[table] = None
-            return None
-        if isinstance(parsed, dict) and isinstance(parsed.get("columns"), list):
-            col_list = parsed["columns"]
-        elif isinstance(parsed, list):
-            col_list = parsed
-        else:
-            self._schema_cache[table] = None
-            return None
-        cleaned: List[str] = []
-        for c in col_list:
-            if not isinstance(c, str):
-                continue
-            name = _clean_col_name(c)
-            if name and name not in cleaned:
-                cleaned.append(name)
-        self._schema_cache[table] = cleaned
-        return cleaned
-
-    async def _validate_against_schema(self, q: str) -> Optional[str]:
-        tables, alias_map = _extract_tables_and_aliases(q)
-        qcols = _extract_qualified_columns(q)
-        def resolve(token: str) -> str:
-            return alias_map.get(token, token)
-        per_table_known: Dict[str, List[str]] = {}
-        targets = set(resolve(tok) for tok, _ in qcols) | set(tables)
-        for t in targets:
-            cols = await self._load_schema(t)
-            if cols:
-                per_table_known[t] = cols
-        if not per_table_known:
-            return None
-        unknown: List[str] = []
-        for token, col in qcols:
-            base = resolve(token)
-            known = per_table_known.get(base)
-            if known is not None and col not in known:
-                unknown.append(f"{token}.{col} (table {base})")
-        if unknown:
-            hints = []
-            for t, cols in per_table_known.items():
-                sample = ", ".join(cols[:20]) if cols else "(none)"
-                hints.append(f"- {t}: {sample}")
-            return (
-                "ERROR: Unknown column(s): " + ", ".join(unknown) + "\n"
-                "Known columns by table:\n" + "\n".join(hints)
-            )
-        return None
-
-    def _coerce_format(self, payload: Dict[str, Any]) -> None:
-        # 1) Respect explicit "format" if present; normalize via _FMT_MAP.
-        fmt = payload.get("format")
-        if isinstance(fmt, str) and fmt.strip():
-            val = fmt.strip().lower()
-            payload["format"] = self._FMT_MAP.get(val, val)
-            return
-
-        # 2) If caller gave a chart_type, try to map it into a format hint.
-        ctype = payload.get("chart_type")
-        if isinstance(ctype, str) and ctype.strip():
-            key = ctype.strip().lower()
-            mapped = self._FMT_MAP.get(key)
-            if mapped:
-                payload["format"] = mapped  # provisional; may be refined by SQL below
-
-        # 3) Infer from SQL only when no explicit format was given.
-        sql = (payload.get("sql") or "").strip()
-        sql_u = sql.lower()
-
-        # Heuristics for time series:
-        time_expr_patterns = [
-            r"date_trunc\s*\(",
-            r"\bto_char\s*\(.*?(yyyy|yy|mm|mon|month|dd|hh|mi|min|ss)\b",
-            r"\bextract\s*\(\s*(year|month|day|hour|minute|second)\s+from",
-        ]
-        time_col_tokens = [
-            "sale_date", "created_at", "updated_at", "order_date",
-            "date", "timestamp", "time"
-        ]
-
-        has_time_expr = any(re.search(p, sql_u) for p in time_expr_patterns)
-        has_time_col = any(re.search(rf"\b{re.escape(tok)}\b", sql_u) for tok in time_col_tokens)
-
-        has_group_by = "group by" in sql_u
-        has_agg = re.search(r"\b(sum|avg|count|min|max|median|percentile|stddev|stddev_pop|stddev_samp)\s*\(", sql_u) is not None
-        has_order_by_time = re.search(r"order\s+by\s+.*?(date_trunc\s*\(|\b(date|timestamp|time|sale_date)\b)", sql_u) is not None
-
-        is_time_series = (
-            has_time_expr
-            or (has_time_col and (has_group_by or has_agg or has_order_by_time))
-        )
-
-        # 4) Decide the final format.
-        if is_time_series:
-            payload["format"] = "time_series"
-        else:
-            payload["format"] = "table"
-        print(f"Coerced format: {payload['format']} for SQL: {sql}")
-
-
-    def _run(self, *args, **kwargs):
-        return asyncio.run(self._arun(*args, **kwargs))
-
-    async def _arun(self, *args, **kwargs):
-        tool_input = kwargs.get("tool_input", None)
-        if tool_input is None and args:
-            tool_input = args[0]
-        q, extras = self._clean_query_and_passthrough(tool_input)
-        if not isinstance(q, str) or not q.strip():
-            return "ERROR: execute_query requires a single string param 'sql'."
-        q = q.strip()
-        if self._is_placeholder(q):
-            return "ERROR: Incomplete SQL."
-        try:
-            err = await self._validate_against_schema(q)
-            if err:
-                print(f"🛑 execute_query blocked by schema validator:\n{err}")
-                return err
-        except Exception as e:
-            print(f"⚠️ schema validation failed: {e}")
-        payload: Dict[str, Any] = {"sql": q}
-        for k, v in extras.items():
-            if k in ("sql", "query"):
-                continue
-            payload[k] = v
-        if not isinstance(payload.get("chart_type"), str) or not payload["chart_type"].strip():
-            payload["chart_type"] = "table"
-        self._coerce_format(payload)
-        try:
-            return await self.inner_tool.arun(payload)
-        except Exception as e1:
-            msg1 = e1.args[0] if getattr(e1, "args", None) else str(e1)
-            low = msg1.lower()
-            if "'sql' is not of type 'array'" in low:
-                retry_payload = dict(payload)
-                if isinstance(retry_payload.get("sql"), str):
-                    retry_payload["sql"] = [retry_payload["sql"]]
-                try:
-                    return await self.inner_tool.arun(retry_payload)
-                except Exception as e2:
-                    msg2 = e2.args[0] if getattr(e2, "args", None) else str(e2)
-                    return f"ERROR: {msg2}"
-            if "not of type 'array'" in low:
-                p = dict(payload)
-                if isinstance(p.get("sql"), str):
-                    p["sql"] = [p["sql"]]
-                if isinstance(p.get("chart_type"), str):
-                    p["chart_type"] = [p["chart_type"]]
-                if isinstance(p.get("format"), str):
-                    p["format"] = [p["format"]]
-                try:
-                    return await self.inner_tool.arun(p)
-                except Exception as e2:
-                    msg2 = e2.args[0] if getattr(e2, "args", None) else str(e2)
-                    return f"ERROR: {msg2}"
-            return f"ERROR: {msg1}"
-
-
-class ListTablesGuard(BaseTool):
-    name: str = "list_tables"
-    description: str = "List available tables. Accepts NO parameters."
-    inner_tool: Any
-    def _run(self, *args, **kwargs):
-        return asyncio.run(self._arun(*args, **kwargs))
-    async def _arun(self, *args, **kwargs):
-        return await self.inner_tool.arun({})
-
-
-def _clean_col_name(raw: str) -> Optional[str]:
-    if not isinstance(raw, str):
-        return None
-    s = raw.strip()
-    s = re.split(r"\s*\(|\s*:\s*", s)[0].strip().strip('"').strip("'")
-    m = re.match(rf"{_SQL_IDENT}", s)
-    return m.group(0) if m else None
-
-
-class GetTableSchemaGuard(BaseTool):
-    name: str = "get_table_schema"
-    description: str = "Get the schema for a table. Signature: get_table_schema(table_name: string) – pass via dict {'table_name': '<name>'}."
-    inner_tool: Optional[Any] = None
-    list_tool: Optional[Any] = None
-
-    # NEW: memoized normalized schemas across runs; and per-run seen set
-    _memo_cache: Dict[str, str] = {}   # table_name -> normalized JSON string
-    _seen_this_run: set = set()        # cleared at the start of each /ask
-
-    def _run(self, *args, **kwargs):
-        return asyncio.run(self._arun(*args, **kwargs))
-    async def _arun(self, *args, **kwargs):
-        ti = kwargs.get("tool_input", None)
-        if ti is None and args:
-            ti = args[0]
-        table_name = None
-        if isinstance(ti, dict):
-            table_name = ti.get("table_name")
-        elif isinstance(ti, str):
-            s = ti.strip()
-            if s.startswith("{") and s.endswith("}"):
-                try:
-                    obj = json.loads(s)
-                    if isinstance(obj, dict):
-                        table_name = obj.get("table_name")
-                except Exception:
-                    table_name = s
-            else:
-                table_name = s
-        if not isinstance(table_name, str) or not table_name:
-            return "ERROR: get_table_schema requires table_name (string). Example: get_table_schema(table_name='orders')."
-
-        # Optional: validate table exists
-        if self.list_tool:
             try:
-                available = await self.list_tool.arun({})
-                if isinstance(available, str):
-                    try:
-                        available = json.loads(available)
-                    except Exception:
-                        pass
-                if isinstance(available, list) and table_name not in available:
-                    return f"ERROR: Unknown table '{table_name}'."
-            except Exception as e:
-                print(f"⚠️ list_tables validation failed: {e}")
+                val = ast.literal_eval(candidate)
+                if isinstance(val, dict):
+                    return val
+                return None
+            except Exception:
+                return None
 
-        # If we've already fetched this table in this run, nudge the agent forward.
-        if table_name in self._seen_this_run:
-            return (
-                f"ERROR: Schema for '{table_name}' already retrieved in this run. "
-                "Proceed to execute_query or fetch the next needed table (e.g., 'products' for per-product charts)."
-            )
-
-        # If cached from a previous run, return quickly but also mark as seen for this run.
-        if table_name in self._memo_cache:
-            self._seen_this_run.add(table_name)
-            return self._memo_cache[table_name]
-
-        # Normal path: fetch once, normalize, memoize, mark seen
-        raw = await self.inner_tool.arun({"table_name": table_name})
-        try:
-            data = json.loads(raw) if isinstance(raw, str) else raw
-        except Exception:
-            data = raw
-        cols: List[str] = []
-        if isinstance(data, dict):
-            sch = data.get("schema")
-            if isinstance(sch, list):
-                for item in sch:
-                    if isinstance(item, dict) and isinstance(item.get("name"), str):
-                        cols.append(item["name"])
-                    elif isinstance(item, str):
-                        cols.append(item)
-            if not cols and isinstance(data.get("columns"), list):
-                for c in data["columns"]:
-                    if isinstance(c, str):
-                        cols.append(c)
-        elif isinstance(data, list):
-            for c in data:
-                if isinstance(c, str):
-                    cols.append(c)
-        seen = set()
-        cols_norm: List[str] = []
-        for c in cols:
-            name = _clean_col_name(c)
-            if name and name not in seen:
-                seen.add(name)
-                cols_norm.append(name)
-        normalized = json.dumps({"columns": cols_norm})
-        self._memo_cache[table_name] = normalized
-        self._seen_this_run.add(table_name)
-        return normalized
-
-
-# ----------------------------
-# Tool alias wrappers
-# ----------------------------
-class ToolAliasNoInput(BaseTool):
-    name: str
-    description: str = "Alias tool that forwards to another tool"
-    target_tool: Any
-    def _run(self, *args, **kwargs):
-        return asyncio.run(self._arun(*args, **kwargs))
-    async def _arun(self, *args, **kwargs):
-        return await self.target_tool.arun({})
-
-class ToolAliasPassthrough(BaseTool):
-    name: str
-    description: str = "Alias tool that forwards to another tool"
-    target_tool: Any
-    def _run(self, *args, **kwargs):
-        return asyncio.run(self._arun(*args, **kwargs))
-    async def _arun(self, *args, **kwargs):
-        ti = kwargs.get("tool_input", {})
-        if isinstance(ti, str):
-            s = ti.strip()
-            if s.startswith("{") and s.endswith("}"):
-                try:
-                    ti = json.loads(s)
-                except Exception:
-                    ti = {}
-            else:
-                ti = {}
-        if not isinstance(ti, dict):
-            ti = {}
-        return await self.target_tool.arun(ti)
-
-
-# ----------------------------
-# Startup: LLM + MCP tools + Agent
-# ----------------------------
-@app.on_event("startup")
-async def startup_event():
-    llm = ChatOllama(
-        model=OLLAMA_MODEL,
-        base_url=OLLAMA_BASE_URL,
-        temperature=0.0,
-        top_p=1.0,
-        model_kwargs={"keep_alive": "10m"}
-    ).bind(stop=["```", "<|python_tag|>", "</tool>"])
-    app.state.llm_base = llm
-    try:
-        llm.invoke("hello")
-    except Exception as e:
-        print(f"⚠️ LLM warmup failed: {e}")
-
-    tools: List[Any] = []
-    mcp_endpoint = f"{MCP_URL.rstrip('/')}/mcp/"
-    mcp_client = MultiServerMCPClient({
-        "default": {
-            "url": mcp_endpoint,
-            "transport": "streamable_http",
-        }
-    })
-
-    try:
-        mcp_tools = await asyncio.wait_for(mcp_client.get_tools(), timeout=10)
-        print("🧩 Loaded MCP tools:", [t.name for t in mcp_tools])
-    except Exception as e:
-        print(f"⚠️ Skipping MCP tools (error reaching {mcp_endpoint}): {e}")
-        mcp_tools = []
-
-    # want = {"list_tables", "get_table_schema", "execute_query"}
-    # base_tools = [t for t in mcp_tools if t.name in want]
-    # by_name = {t.name: t for t in base_tools}
-    by_name = {t.name: t for t in mcp_tools}
-    # Accept either plain names or the sql.* variants exposed by fastapi-mcp
-    def pick_tool(candidates):
-        for name in candidates:
-            if name in by_name:
-                return by_name[name]
-        return None
-
-    list_inner  = pick_tool(["list_tables", "sql.list_tables"])
-    schema_inner= pick_tool(["get_table_schema", "sql.schema"])
-    exec_inner  = pick_tool(["execute_query", "sql.query"])
-
-    list_guard = None
-    schema_guard = None
-    exec_guard = None
-    
-    if list_inner:
-        list_guard = ListTablesGuard(inner_tool=list_inner)
-        tools.append(list_guard)
-    else:
-        print("⚠️ MCP tool for listing tables not found (tried: list_tables, sql.list_tables)")
-
-    if schema_inner:
-        schema_guard = GetTableSchemaGuard(inner_tool=schema_inner)
-        if list_guard:
-            schema_guard.list_tool = list_guard
-        tools.append(schema_guard)
-    else:
-        print("⚠️ MCP tool for schema not found (tried: get_table_schema, sql.schema)")
-
-    if exec_inner:
-        exec_guard = ExecuteQueryGuard(inner_tool=exec_inner, schema_tool=schema_guard)
-        tools.append(exec_guard)
-    else:
-        print("⚠️ MCP tool for execute not found (tried: execute_query, sql.query)")
-        
-
-    # Aliases
-    alias_specs: List[Tuple[Any, str, Any]] = []
-    if list_guard is not None:
-        alias_specs += [
-            (ToolAliasNoInput, "List available tables.", list_guard),
-            (ToolAliasNoInput, "List available tables",  list_guard),
-            (ToolAliasNoInput, "List tables",            list_guard),
-        ]
-    if exec_guard is not None:
-        alias_specs += [
-            (ToolAliasPassthrough, "Execute SQL query to retrieve data.", exec_guard),
-            (ToolAliasPassthrough, "Execute SQL query",                    exec_guard),
-            (ToolAliasPassthrough, "Execute query",                        exec_guard),
-            (ToolAliasPassthrough, "Execute query to get data.",           exec_guard),
-            (ToolAliasPassthrough, "Execute query to get data",            exec_guard),
-        ]
-    if schema_guard is not None:
-        alias_specs += [
-            (ToolAliasPassthrough, "Get table schema",  schema_guard),
-            (ToolAliasPassthrough, "Get schema",        schema_guard),
-            (ToolAliasPassthrough, "Describe table",    schema_guard),
-        ]
-        available_tables: List[str] = []
-        if list_guard is not None:
-            try:
-                available = await list_guard.arun({})
-                if isinstance(available, str):
-                    try:
-                        available = json.loads(available)
-                    except Exception:
-                        available = []
-                if isinstance(available, list):
-                    available_tables = [str(t) for t in available]
-            except Exception as e:
-                print(f"⚠️ Could not fetch tables for schema aliases: {e}")
-        patterns = [
-            "Get table schema for '{t}'.",
-            "Get table schema for '{t}'",
-            "Get table schema for {t}.",
-            "Get table schema for {t}",
-            "Get schema for '{t}'.",
-            "Get schema for '{t}'",
-            "Describe table '{t}'.",
-            "Describe table '{t}'",
-            "Describe table {t}.",
-            "Describe table {t}",
-        ]
-        for t in available_tables:
-            for pat in patterns:
-                alias_name = pat.format(t=t)
-                alias_specs.append((ToolAliasPassthrough, alias_name, schema_guard))
-
-    for cls, alias_name, target in alias_specs:
-        try:
-            alias_tool = cls(name=alias_name, target_tool=target)
-            tools.append(alias_tool)
-        except Exception as e:
-            print(f"⚠️ Could not register alias '{alias_name}': {e}")
-
-    print("🚀 Agent ready with tools: ", [t.name for t in tools])
-
-    # --- System prompt (with required variables + doubled braces in JSON) ---
-    system_text = '''
-You are a SQL analysis agent with MCP tools:
-- list_tables()
-- get_table_schema(table_name)
-- execute_query(sql)
-
-RULES (CRITICAL):
-- Do NOT include Python, Markdown, or code fences in your replies.
-- NEVER write placeholders like "..." anywhere in outputs.
-- The only allowed structures are exactly these lines, in this order:
-  Thought: <brief reasoning> | Checklist: CAST=OK; AGG=OK; GBY=OK; EXTRA=NO
-  Action: <one of: list_tables, get_table_schema, execute_query>
-  Action Input: {{"...": "..."}}
-  Observation: <tool result or ERROR: ...>
-- After one or more cycles, finish with ONE final line beginning with "Final Answer:" followed by a single JSON object.
-- The Checklist MUST appear ONLY in the Thought line and nowhere else.
-
-SQL LINT CHECKLIST (MANDATORY in Thought line):
-- CAST=OK → all non-aggregate SELECT expressions end with ::text.
-- AGG=OK → no aggregate is cast to ::text.
-- GBY=OK → every GROUP BY expression appears in SELECT and, if non-aggregate, ends with ::text; never use positional indices.
-- EXTRA=NO → there are no auxiliary/duplicate queries for the same intent.
-If any token would not be OK, FIX the SQL BEFORE calling execute_query or emitting Final Answer.
-
-SELECT COLUMN POLICY (HUMAN-FRIENDLY OUTPUT) — HARD REQUIREMENT:
-- Do NOT select raw primary key or foreign key columns (columns named "id" or ending with "_id") in the SELECT list.
-- Instead, JOIN to the referenced table and select a human-readable field (typically `name`) with ::text and a clear alias.
-  Mappings:
-    * sales.person_id   → JOIN person         ON s.person_id   = p.id   → p.name::text        AS person
-    * sales.product_id  → JOIN products       ON s.product_id  = pr.id  → pr.name::text       AS product
-    * sales.payment_id  → JOIN payment_type   ON s.payment_id  = pt.id  → pt.name::text       AS payment_type
-- If any *_id appears in SELECT, rewrite with the JOIN and name before execute_query.
-
-CASTING POLICY (HARD REQUIREMENT):
-- Every non-aggregate SELECT expression MUST include ::text.
-- Do NOT cast aggregates (SUM/AVG/COUNT/MIN/MAX/etc.).
-- Do NOT cast numeric/boolean expressions or literals.
-- Cast date/time label expressions (e.g., DATE_TRUNC('year', ...)) to ::text.
-- NEVER add extra queries just for casting — only cast the columns already needed in the SELECT list.
-
-GROUP BY / ORDER BY POLICY:
-- Do NOT use positional indices (e.g., "GROUP BY 1", "ORDER BY 1").
-- Always GROUP BY and ORDER BY using explicit aliases or full expressions (e.g., GROUP BY year ORDER BY year).
-
-TOOL CALL SHAPES (STRICT):
-- Action: list_tables
-  Action Input: {{}}
-- Action: get_table_schema
-  Action Input: {{"table_name":"<exact name>"}}
-- Action: execute_query
-  Action Input: {{"sql":"<full SQL>","chart_type":"barchart|line|piechart|table|stat|gauge","format":"table|time_series"}}
-- The Action Input for execute_query MUST have "sql" as a raw SQL string only (not JSON). Never wrap the SQL string itself as JSON.
-
-WORKFLOW:
-- Determine the minimal set of chart intents in the user request (max 4), and handle them in order.
-- For each intent:
-  1) Call get_table_schema() ONCE for every table you will reference (e.g., sales, person, products, payment_type).
-  2) Build ONE SQL that satisfies CAST/GBY and the SELECT COLUMN POLICY (no raw ids).
-  3) Call execute_query once.
-- Do NOT repeat list_tables or get_table_schema for the same table more than once in a run.
-- If you receive an Observation starting with "ERROR: Schema for '<table>' already retrieved in this run", STOP calling get_table_schema('<table>') and move on.
-
-SCHEMA-STRICT MODE:
-- Only reference columns you personally saw via get_table_schema() this run.
-
-COMMON PATTERNS (reference):
-- Annual totals:
-  SELECT DATE_TRUNC('year', s.sale_date)::text AS year, SUM(s.value) AS total
-  FROM sales s
-  GROUP BY year
-  ORDER BY year
-- Per person average sale:
-  SELECT p.name::text AS person, AVG(s.value) AS avg_sales
-  FROM sales s JOIN person p ON s.person_id=p.id
-  GROUP BY person
-  ORDER BY avg_sales DESC
-- Per product totals:
-  SELECT pr.name::text AS product, SUM(s.value) AS total
-  FROM sales s JOIN products pr ON s.product_id=pr.id
-  GROUP BY product
-  ORDER BY total DESC
-- Per payment type counts & totals:
-  SELECT pt.name::text AS payment_type, COUNT(*) AS num_sales, SUM(s.value) AS total_value
-  FROM sales s JOIN payment_type pt ON s.payment_id=pt.id
-  GROUP BY payment_type
-  ORDER BY total_value DESC
-
-REQUIRED ARGUMENTS FOR execute_query (examples):
-  {{"sql":"SELECT SUM(value) AS total FROM sales","chart_type":"stat","format":"table"}}
-  {{"sql":"SELECT DATE_TRUNC('year', s.sale_date)::text AS year, SUM(s.value) AS total FROM sales s GROUP BY year ORDER BY year","chart_type":"barchart","format":"table"}}
-  {{"sql":"SELECT pr.name::text AS product, AVG(s.value) AS avg_value FROM sales s JOIN products pr ON s.product_id=pr.id GROUP BY product ORDER BY avg_value DESC","chart_type":"barchart","format":"table"}}
-  {{"sql":"SELECT pt.name::text AS payment_type, COUNT(*) AS num_sales, SUM(s.value) AS total_value FROM sales s JOIN payment_type pt ON s.payment_id=pt.id GROUP BY payment_type ORDER BY total_value DESC","chart_type":"barchart","format":"table"}}
-
-ERROR BEHAVIOR:
-- If an Observation starts with "ERROR:", correct the SQL once and try execute_query again for that intent, then move to the next intent.
-
-FINAL OUTPUT (SUCCESS) — one line only:
-Final Answer: {{"results":[
-  {{"sql":"<SQL 1>","viz":{{"type":"<barchart|line|piechart|table|stat|gauge>","format":"<table|time_series>","title":"<short label>"}}}},
-  {{"sql":"<SQL 2>","viz":{{"type":"<barchart|line|piechart|table|stat|gauge>","format":"<table|time_series>","title":"<short label>"}}}},
-  ...
-]}}
-
-FINAL OUTPUT (ERROR) — one line only:
-Final Answer: {{"error":"<clear message about what is missing or ambiguous>"}}
-
-TOOLS:
-{tools}
-
-Valid tool names: {tool_names}
-'''.strip()
-
-
-
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_text),
-        ("human", "{input}\n\n{agent_scratchpad}"),
-    ])
-
-    def _format_fix(e: Exception) -> str:
-        return (
-            "FORMAT ERROR: Your last message was not in the expected ReAct format.\n"
-            "Respond again using EXACTLY this structure:\n"
-            "Thought: <brief reasoning>\n"
-            "Action: <one of: list_tables, get_table_schema, execute_query>\n"
-            'Action Input: {"...": "..."}\n'
-        )
-
-    cbmgr = CallbackManager([DebugCallbackHandler()])
-    agent = create_react_agent(llm=llm, tools=tools, prompt=prompt)
-    executor = AgentExecutor(
-        agent=agent,
-        tools=tools,
-        verbose=True,
-        return_intermediate_steps=True,
-        callback_manager=cbmgr,
-        handle_parsing_errors=_format_fix,
-        max_iterations=12,
-        max_execution_time=45,
-        early_stopping_method="force",
-    )
-
-    app.state.executor = executor
-    app.state.tools = {t.name: t for t in tools}
-
-
-# ----------------------------
-# Helper: detect agent error JSON
-# ----------------------------
-def _looks_like_error_json(s: str) -> Optional[str]:
-    try:
-        obj = json.loads(s)
-        if isinstance(obj, dict) and "error" in obj and isinstance(obj["error"], str):
-            return obj["error"]
-    except Exception:
-        pass
-    return None
-
-
-# ----------------------------
-# Fast-lanes
-# ----------------------------
-DAILY_SALES_RE = re.compile(
-    r"\b(daily|per\s*day)\b.*\b(sale|sales)\b.*\b(bar\s*chart|bar\s*graph)\b",
-    re.IGNORECASE
-)
-
-# Multi-intent fast lane for common dashboards
-AVG_PER_PERSON_RE = re.compile(r"\b(avg|average)\b.*\b(per|by)\b.*\bperson\b", re.IGNORECASE)
-ANNUAL_RE = re.compile(r"\b(annual|annually|year|yearly)\b", re.IGNORECASE)
-PER_PRODUCT_RE = re.compile(r"\b(product|products)\b", re.IGNORECASE)
-
-async def _table_has(schema_tool, table: str, needed: List[str]) -> bool:
-    try:
-        sch_raw = await schema_tool.arun({"table_name": table})
-        sch = json.loads(sch_raw) if isinstance(sch_raw, str) else sch_raw
-        cols = set((sch or {}).get("columns", [])) if isinstance(sch, dict) else set()
-        return set(needed).issubset(cols)
-    except Exception:
-        return False
+def _sql_fingerprint(sql: str) -> str:
+    if not isinstance(sql, str):
+        return ""
+    s = sql.strip().rstrip(";")
+    s = re.sub(r"\s+", " ", s)
+    s = re.sub(r"\(\s+", "(", s)
+    s = re.sub(r"\s+\)", ")", s)
+    return s.lower()
 
 def _normalize_result_item(item: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(item, dict):
@@ -924,278 +323,411 @@ def _normalize_result_item(item: Any) -> Optional[Dict[str, Any]]:
         sql = " ".join(str(x) for x in sql)
     if not isinstance(sql, str) or not sql.strip():
         return None
-
     viz = item.get("viz") or {}
     if not isinstance(viz, dict):
         viz = {}
-
-    # Hoist stray fields the model sometimes puts at top level
-    top_chart_type = item.get("chart_type")
-    top_format = item.get("format")
-    top_title = item.get("title")
-
-    if "type" not in viz and isinstance(top_chart_type, str):
-        viz["type"] = top_chart_type
-    if "format" not in viz and isinstance(top_format, str):
-        viz["format"] = top_format
-    if "title" not in viz and isinstance(top_title, str):
-        viz["title"] = top_title
-
-    # Defaults
-    viz.setdefault("type", "table")
-    viz.setdefault("format", "table")
-    viz.setdefault("title", "Result")
-
+    viz.setdefault("type", item.get("chart_type","table"))
+    viz.setdefault("format", item.get("format","table"))
+    viz.setdefault("title", item.get("title","Result"))
     return {"sql": sql.strip(), "viz": viz}
 
-def _msg_text(msg: Any) -> str:
-    """Extract text from LangChain AIMessage or plain string."""
-    if isinstance(msg, str):
-        return msg
-    # LangChain's AIMessage has `.content`
-    content = getattr(msg, "content", None)
-    if isinstance(content, str):
-        return content
-    return str(msg)
+# ----------------------------
+# Intent parsing (from your previous code, simplified but compatible)
+# ----------------------------
+SYNONYM_MAPPINGS: Dict[str, str] = {
+    "customer": "person", "user": "person",
+    "product": "products", "item": "products",
+    "sale": "sales", "order": "orders",
+    "payment method": "paymenttype",
+}
+def normalize_synonyms(text: str) -> str:
+    keys = set(SYNONYM_MAPPINGS.keys()) | {k + "s" for k in SYNONYM_MAPPINGS.keys()}
+    if not text: return ""
+    pattern = rf"(?<!\w)({'|'.join(map(re.escape, sorted(keys, key=len, reverse=True)))})(?!\w)"
+    def to_singular(token: str) -> str:
+        t = token.lower()
+        return t[:-1] if t.endswith("s") and t[:-1] in SYNONYM_MAPPINGS else t
+    def repl(m):
+        tok = m.group(1)
+        base = to_singular(tok)
+        out = SYNONYM_MAPPINGS.get(base, tok)
+        if tok.lower().endswith("s") and not out.lower().endswith("s"):
+            out = (out[:-1] + "ies") if out.endswith("y") else (out + "s")
+        return out if tok.islower() else out.capitalize() if tok.istitle() else out.upper()
+    return re.sub(pattern, repl, text, flags=re.IGNORECASE)
 
-def _sanitize_text(s: Any) -> str:
-    return (str(s or "")).replace("\n", " ").replace("\r", " ").strip()
+_CHART_SYNONYMS = {
+    "bar":"barchart","bar chart":"barchart","bars":"barchart",
+    "pie":"piechart","pie chart":"piechart",
+    "line":"line","line chart":"line",
+    "table":"table","stat":"stat","metric":"stat","single value":"stat","kpi":"stat",
+    "gauge":"gauge"
+}
+def _canon_chart_type(raw: str) -> Optional[str]:
+    t = (raw or "").strip().lower()
+    return _CHART_SYNONYMS.get(t) or _CHART_SYNONYMS.get(t.replace("-", " "))
 
-def _extract_top_json_object(text: str) -> dict:
-    """
-    Extract the FIRST top-level JSON object from an arbitrary string.
-    Strips code fences and optional 'Final Answer:' prefix.
-    """
-    s = (text or "").strip()
-    # Strip code fences if present
-    if s.startswith("```"):
-        s = re.sub(r"^```[a-zA-Z0-9_-]*\n?", "", s)
-        if "```" in s:
-            s = s[:s.rfind("```")]
-        s = s.strip()
-    # Handle 'Final Answer:' prefix if the model included it
-    idx = s.lower().find("final answer:")
-    if idx != -1:
-        s = s[idx + len("final answer:"):].lstrip()
-    # Find first JSON object
-    start = s.find("{")
-    if start == -1:
-        raise ValueError("No JSON object found in model output.")
-    depth, end, in_str, esc = 0, None, False, False
-    for i, ch in enumerate(s[start:], start):
-        if esc:
-            esc = False
-            continue
-        if ch == "\\":
-            esc = True
-            continue
-        if ch == '"':
-            in_str = not in_str
-            continue
-        if in_str:
-            continue
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                end = i + 1
-                break
-    if end is None:
-        raise ValueError("Unterminated JSON object in model output.")
-    candidate = s[start:end]
-    try:
-        return json.loads(candidate)
-    except Exception:
-        # last-ditch: common single-quote JSON
-        return json.loads(candidate.replace("'", '"'))
+_TIME_WORDS = {
+    "annually": ("Annual", "year"), "annual": ("Annual","year"),
+    "yearly": ("Annual","year"), "monthly": ("Monthly","month"),
+    "weekly": ("Weekly","week"), "daily": ("Daily","day"),
+    "quarterly": ("Quarterly","quarter")
+}
+def _detect_time_label(phrase: str) -> Optional[str]:
+    p = phrase.lower()
+    for k,(label,_) in _TIME_WORDS.items():
+        if re.search(rf"\b{k}\b", p): return label
+    return None
 
-# Prompt builder for Ollama to emit FINAL dashboard JSON only
-def _prompt_for_grafana_dashboard(results: List[Dict[str, Any]], title_prefix: str, timestamp: str) -> str:
-    """
-    Build a strict prompt so Ollama returns ONE JSON object:
-      {
-        "dashboard": {
-          "title": "<dynamic from panel titles (and optional prefix)> - <timestamp>",
-          ...
-          "panels": [...]
-        },
-        "overwrite": true
-      }
-
-    - Panels: 2-per-row layout; last odd panel full-width
-    - type↔format mapping enforced
-    - SQL used verbatim (escaped for prompt safety)
-    """
-
-    def _sanitize(s: str) -> str:
-        return (s or "").replace("\n", " ").replace("\r", " ").replace('"', '\\"').strip()
-
-    # Collect panel titles (preserve order, drop duplicates) for dynamic title
-    seen = set()
-    panel_titles: List[str] = []
-    for r in results:
-        viz = r.get("viz") or {}
-        t = viz.get("title") or "Panel"
-        t = " ".join(t.split())
-        if t not in seen:
-            seen.add(t)
-            panel_titles.append(t)
-
-    # Build a concise dynamic title from the panel titles
-    # Example: "Sales per Product • Average Sales per Person • Annual Sales"
-    dyn_from_titles = " • ".join(panel_titles) if panel_titles else "Dashboard"
-
-    # If caller provided a prefix, prepend it; otherwise just use the titles
-    # Resulting prefix kept to ~120 chars to avoid overly long titles
-    base_prefix = (title_prefix or "").strip()
-    if base_prefix:
-        dynamic_prefix = f"{base_prefix}: {dyn_from_titles}"
-    else:
-        dynamic_prefix = dyn_from_titles
-    if len(dynamic_prefix) > 120:
-        dynamic_prefix = dynamic_prefix[:117] + "..."
-
-    # Prepare compact panels description for the model
-    lines = []
-    for i, r in enumerate(results, 1):
-        viz = r.get("viz") or {}
-        p_title = _sanitize(viz.get("title", "Panel"))
-        p_type  = _sanitize((viz.get("type") or "table").lower())
-        p_sql   = _sanitize(r.get("sql", ""))
-        lines.append(f'{i}) title="{p_title}", type="{p_type}", sql="{p_sql}"')
-    panels_block = "\n".join(lines)
-
-    # IMPORTANT: We tell the model the exact final title it must set.
-    final_title_prefix = _sanitize(dynamic_prefix)
-    EXACT_TITLE_LINE = f'- Set dashboard.title EXACTLY to "{final_title_prefix} - {timestamp}"'
-
-    return f"""
-    SYSTEM RULES:
-    - Output ONE JSON object ONLY. No prose, no code fences.
-    - Top-level keys: "dashboard", "overwrite".
-    - {EXACT_TITLE_LINE}
-    - dashboard.title MUST also match regex: ".* - {timestamp}"
-    - dashboard.schemaVersion=36, version=1, refresh="5s"
-    - dashboard.time={{"from":"now-5y","to":"now"}}
-    - dashboard.timepicker with typical refresh_intervals and time_options
-    - datasource={{"type":"postgres","uid":"desl46jinre9sb"}} for every panel
-    - Panels layout: 24-column grid, h=8 per panel:
-    * Index i (0-based), total N:
-        - if i==N-1 and N is odd → gridPos={{"x":0,"y":(i//2)*8,"w":24,"h":8}}
-        - else if i even → gridPos={{"x":0,"y":(i//2)*8,"w":12,"h":8}}
-        - else (i odd)  → gridPos={{"x":12,"y":(i//2)*8,"w":12,"h":8}}
-    - Each panel:
-    * id = 1..N, title from input, type ∈ {{barchart,piechart,timeseries,table,stat}}
-    * targets[0]={{"refId":"A","rawSql":<SQL>,"format":<see below>}}
-    * FORMAT mapping: timeseries → "time_series"; others → "table"
-    - Do NOT modify SQL. Use it exactly as provided.
-
-    INPUT:
-    title_prefix="{final_title_prefix}"
-    timestamp="{timestamp}"
-    PANELS:
-    {panels_block}
-
-    RETURN: The final dashboard JSON ONLY.
-    """.strip()
-
-
-# Call Ollama to generate dashboard JSON, validate, and push
-async def _ollama_make_validate_push_dashboard_async(
-    llm: ChatOllama,
-    results: List[Dict[str, Any]],
-    *,
-    title_prefix: str,
-    timestamp: str,
-    gen_timeout: int = 90,         # <- configurable generation timeout
-    post_timeout: int = 30,        # <- http post timeout
-    save_path: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Ask Ollama to build the dashboard JSON, validate (if models present), optionally POST to Grafana,
-    and optionally write to a file. Returns {"grafana_result": ..., "validated": ..., "raw_text": ...}.
-    """
-    prompt = _prompt_for_grafana_dashboard(results, title_prefix, timestamp)
-
-    # ChatOllama.invoke(...) is blocking. Run it off the event loop thread and await with a timeout.
-    try:
-        ai_msg = await asyncio.wait_for(
-            asyncio.to_thread(llm.invoke, prompt),
-            timeout=gen_timeout
-        )
-    except asyncio.TimeoutError:
-        raise RuntimeError(f"Ollama generation timed out after {gen_timeout}s")
-
-    # LangChain returns an AIMessage. Use .content.
-    raw_text = getattr(ai_msg, "content", str(ai_msg))
-
-    # Parse the JSON object from the model output
-    try:
-        dashboard_dict = _extract_top_json_object(raw_text)
-    except Exception as e:
-        snippet = raw_text[:400].replace("\n", " ")
-        raise RuntimeError(f"Ollama did not return valid JSON: {e}. Got: {snippet}")
-
-    # If you have Pydantic models/validators available, use them; otherwise pass-through.
-    payload = dashboard_dict
-    if "DashboardSpec" in globals():
-        try:
-            validated = DashboardSpec(**dashboard_dict)
-            payload = validated.dict(by_alias=True, exclude_none=True)
-        except Exception as e:
-            raise RuntimeError(f"Final dashboard invalid (Pydantic): {e}")
-
-        if "DashboardValidation" in globals():
-            ok, err = DashboardValidation.validate_dashboard_python(
-                dashboard_dict=payload,
-                prompt=title_prefix,
-                timestamp=timestamp,
-                table_meta={}
-            )
-            if not ok:
-                raise RuntimeError(f"Final dashboard invalid: {err}")
-
-    # Save to file if requested
-    if save_path:
-        try:
-            os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            with open(save_path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            raise RuntimeError(f"Failed writing dashboard JSON to {save_path}: {e}")
-
-    # Optional POST to Grafana when enabled
-    grafana_result = None
-    url = os.getenv("GRAFANA_MCP_URL")
-    if url and os.getenv("ENABLE_GRAFANA_POST", "0") == "1":
-        import requests  # local import so your app runs even if requests is omitted elsewhere
-        try:
-            resp = requests.post(
-                url,
-                headers={"Content-Type": "application/json"},
-                json=payload,
-                timeout=post_timeout
-            )
-            resp.raise_for_status()
-            ctype = resp.headers.get("Content-Type", "")
-            grafana_result = resp.json() if "application/json" in ctype else resp.text
-        except Exception as e:
-            raise RuntimeError(f"Grafana POST failed: {e} | body={getattr(e, 'response', None) and getattr(e.response, 'text', '')[:400]}")
-    return {"grafana_result": grafana_result, "validated": payload, "raw_text": raw_text}
-
-
-
-
-def _remove_code_fences(text: str) -> str:
-    s = (text or "").strip()
-    if s.startswith("```"):
-        # strip leading fence
-        s = s.split("```", 2)[1] if "```" in s[3:] else s[3:]
-        # strip trailing fence if present
-        if "```" in s:
-            s = s[:s.rfind("```")]
+def _clean_phrase(s: str) -> str:
+    s = re.sub(r"\s+", " ", s)
+    s = re.sub(r"[,.;:]+$", "", s)
     return s.strip()
+
+def _extract_chart_type_segment(seg: str) -> Optional[str]:
+    m = re.search(r"\b(?:as|in)\s+(?:a\s+|an\s+)?([a-z-]+(?:\s+chart)?)\b", seg, flags=re.I)
+    if not m: return None
+    raw = m.group(1).strip().lower().replace(" chart","")
+    return _canon_chart_type(raw)
+
+def _has_metric(phrase: str) -> bool:
+    p = phrase.lower()
+    if _detect_time_label(phrase):  # annually, monthly, etc.
+        return True
+    if re.search(r"\bsales?\b", p):  # treat "sales" itself as a metric-like target
+        return True
+    return bool(re.search(r"\b(sum|total|count|number|avg|average|mean|median|max|min)\b", p))
+
+
+def _guess_grouping(phrase: str) -> Optional[str]:
+    p = phrase.lower()
+    m = re.search(r"\b(?:per|by)\s+([a-z_][a-z0-9_\s-]{1,40})\b", p)
+    if m:
+        grp = m.group(1)
+        grp = re.sub(r"\b(as|and|the|a|an)\b.*$", "", grp).strip()
+        grp = re.sub(r"[^a-z0-9\s_-]", "", grp).strip().replace("_"," ")
+        return grp if grp else None
+    tl = _detect_time_label(phrase)
+    return tl
+
+def _title_case(s: str) -> str:
+    return " ".join(w.capitalize() for w in re.split(r"\s+", s.strip()))
+
+def extract_intents_from_prompt(text: str) -> List[Dict[str, str]]:
+    if not isinstance(text, str): return []
+    t = normalize_synonyms(text)
+    parts = re.split(r"\s+(?:and|&)\s+|[,;]\s*", t, flags=re.I)
+    intents: List[Dict[str, str]] = []
+    seen = set()
+    for raw_seg in parts:
+        seg = _clean_phrase(raw_seg)
+        if len(seg) < 6: continue
+        chart = _extract_chart_type_segment(seg)
+        if not chart: continue
+        if chart != "stat" and not _has_metric(seg): continue
+        grouping = _guess_grouping(seg)
+        metric_part = re.split(r"\b(?:as|in)\b\s+(?:a\s+|an\s+)?", seg, flags=re.I)[0]
+        title = _title_case(metric_part if not grouping or grouping in metric_part.lower()
+                            else f"{metric_part} by {grouping}")
+        key = (title.lower(), chart)
+        if key in seen: continue
+        seen.add(key)
+        intents.append({"title": title, "chart_type": chart, "note": seg})
+    return intents
+
+# ADD: tolerant parser that accepts Final Answer:, fenced code, or raw JSON
+def _parse_any_json(text: str) -> Optional[dict]:
+    if not isinstance(text, str) or not text.strip():
+        return None
+    s = text.strip()
+
+    # try your existing tolerant "Final Answer:" extractor first
+    fa = _parse_final_answer_obj(s)
+    if isinstance(fa, dict):
+        return fa
+
+    # strip code fences (keep largest fenced block first)
+    s = s.replace("\r", "")
+    if "```" in s:
+        blocks = []
+        parts = s.split("```")
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            if part.lower().startswith("json\n"):
+                part = part.split("\n", 1)[1].strip()
+            blocks.append(part)
+        for b in sorted(blocks, key=len, reverse=True):
+            try:
+                return json.loads(b)
+            except Exception:
+                pass
+
+    # last chance: find first top-level JSON object anywhere
+    start = s.find("{")
+    if start != -1:
+        depth = 0
+        in_str = False
+        esc = False
+        end = None
+        for i, ch in enumerate(s[start:], start):
+            if esc:
+                esc = False
+                continue
+            if ch == "\\":
+                esc = True
+                continue
+            if ch == '"':
+                in_str = not in_str
+                continue
+            if in_str:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+        if end:
+            candidate = s[start:end]
+            for attempt in (candidate, candidate.replace("'", '"')):
+                with suppress(Exception):
+                    return json.loads(attempt)
+            with suppress(Exception):
+                val = ast.literal_eval(candidate)
+                if isinstance(val, dict):
+                    return val
+    return None
+
+# ----------------------------
+# Stub MCP client placeholders (we keep tools as async callables)
+# ----------------------------
+
+class ListTablesGuard(BaseTool):
+    name: str = "sql.list_tables"
+    description: str = "List available tables. Accepts NO parameters."
+    inner_tool: Any = None
+    _called_once: bool = False
+    _memo: Any = None
+    def reset_run(self): self._called_once=False; self._memo=None
+    def _run(self, *args, **kwargs): return asyncio.run(self._arun(*args, **kwargs))
+    async def _arun(self, *args, **kwargs):
+        if not self.inner_tool:
+            print("⚠️ [ListTablesGuard] No inner_tool; using demo data")
+            return json.dumps({"tables":["sales","person","products","paymenttype","orders"]})
+        if not self._called_once:
+            res = await self.inner_tool.arun({})
+            self._called_once = True; self._memo = res; return res
+        return self._memo
+
+class GetTableSchemaGuard(BaseTool):
+    name: str = "sql.schema"
+    description: str = "Get table schema: {'table_name':'...'}"
+    inner_tool: Any = None
+    list_tool: Optional[Any] = None
+    _available_tables_cache: Optional[List[str]] = None
+    _memo_cache: Dict[str, str] = {}
+    _seen_this_run: set = set()
+    def reset_run(self):
+        self._available_tables_cache=None; self._memo_cache={}; self._seen_this_run=set()
+    def _run(self, *args, **kwargs): return asyncio.run(self._arun(*args, **kwargs))
+    async def _arun(self, *args, **kwargs):
+        ti = kwargs.get("tool_input", None) or (args[0] if args else None)
+        if isinstance(ti, dict):
+            table_name = ti.get("table_name")
+        elif isinstance(ti, str):
+            try: table_name = json.loads(ti).get("table_name")
+            except Exception: table_name = ti
+        else:
+            return "ERROR: get_table_schema requires table_name"
+        if not isinstance(table_name, str) or not table_name.strip():
+            return "ERROR: get_table_schema requires table_name"
+        table_name = table_name.strip()
+        if table_name in self._seen_this_run and table_name in self._memo_cache:
+            obj = json.loads(self._memo_cache[table_name])
+            obj["cached"] = True
+            return json.dumps(obj)
+        if self.inner_tool:
+            raw = await self.inner_tool.arun({"table_name": table_name})
+            try: data = json.loads(raw) if isinstance(raw, str) else raw
+            except Exception: data = raw
+            if isinstance(data, dict) and ("columns" in data or "schema" in data):
+                cols = data.get("columns") or []
+                schema = data.get("schema") or cols
+                out = {"schema": schema, "columns": cols, "cached": False}
+            else:
+                out = {"schema": [], "columns": [], "cached": False}
+        else:
+            demo = {
+                "sales": ["id","person_id","product_id","sale_date","value","payment_id","order_id"],
+                "person": ["id","name","email","city","role"],
+                "products": ["id","name","category"],
+                "paymenttype": ["id","method"],
+                "orders": ["id","number"]
+            }
+            cols = demo.get(table_name.lower(), [])
+            if not cols:
+                return f"ERROR: Unknown table '{table_name}'"
+            out = {"schema": [c+" (text)" for c in cols], "columns": cols, "cached": False}
+        self._seen_this_run.add(table_name)
+        self._memo_cache[table_name] = json.dumps(out)
+        return json.dumps(out)
+
+
+class ExecuteQueryGuard(BaseTool):
+    name: str = "sql.query"
+    description: str = "Execute a SQL query with optional viz hints."
+    args_schema: Type[BaseModel] = ExecArgs
+    inner_tool: Any = None        # wire your real executor here
+    schema_tool: Optional[Any] = None
+    _result_cache: Dict[Tuple[str, str, str], Any] = {}
+
+    PREVIEW_LIMIT: int = 20
+
+    def reset_run(self):
+        self._result_cache = {}
+
+    def _run(self, *args, **kwargs):
+        return asyncio.run(self._arun(*args, **kwargs))
+
+    async def _arun(self, *args, **kwargs):
+        ti = kwargs.get("tool_input", None) or (args[0] if args else None)
+        if isinstance(ti, dict):
+            payload = dict(ti)
+        elif isinstance(ti, str):
+            try:
+                payload = json.loads(ti)
+                print(f"[ExecuteQueryGuard] Parsed JSON input: {_short(payload)}")
+            except Exception:
+                payload = {"sql": ti}
+                print(f"[ExecuteQueryGuard] Using raw string input as SQL")
+        else:
+            return "ERROR: invalid input for sql.query"
+
+        sql = (payload.get("sql") or "").strip()
+
+        if not sql or "select" not in sql.lower():
+            return json.dumps({"status":"error","message":"Missing or invalid SQL"})
+
+        ctype = (payload.get("chart_type") or "table").lower().strip()
+        fmt = (payload.get("format") or ("time_series" if ctype in ("line", "timeseries") else "table")).lower()
+        key = (_sql_fingerprint(sql), ctype, fmt)
+        if key in self._result_cache:
+            return self._result_cache[key]
+
+        # ---- run query (no hardcoded demo data) ----
+        try:
+            if self.inner_tool:
+                raw = await self.inner_tool.arun(payload)  # pass-through
+            else:
+                # Strict behavior by default: surface a clear error
+                if os.getenv("SQL_QUERY_NOOP_OK", "").lower() in ("1", "true", "yes"):
+                    # Optional soft-noop (returns a structured “no executor” observation)
+                    norm = {
+                        "status": "noop",
+                        "columns": [],
+                        "rows": 0,
+                        "data_preview": [],
+                        "message": "sql.query has no inner_tool configured; no query executed."
+                    }
+                    out = json.dumps(norm, ensure_ascii=False)
+                    self._result_cache[key] = out
+                    print(f"[ExecuteQueryGuard] No executor; noop for SQL: {_short(sql)}")
+                    return out
+                # Default: error
+                return json.dumps({"status":"error","message":"sql.query has no inner_tool configured; cannot execute SQL."})
+
+        except Exception as e:
+            return json.dumps({"status":"error","message": str(e)})
+
+
+        # ---- normalize common shapes ----
+        def normalize(obj: Any) -> Dict[str, Any]:
+            if isinstance(obj, str):
+                try:
+                    obj = json.loads(obj)
+                except Exception:
+                    return {
+                        "status": "ok",
+                        "columns": ["text"],
+                        "rows": 1,
+                        "data_preview": [{"text": obj}],
+                    }
+
+            if isinstance(obj, dict) and "columns" in obj and "rows" in obj and isinstance(obj["rows"], list):
+                cols = obj.get("columns") or []
+                rows = obj.get("rows") or []
+                preview = []
+                for r in rows[: self.PREVIEW_LIMIT]:
+                    if isinstance(r, dict):
+                        preview.append(r)
+                    elif isinstance(r, list):
+                        preview.append({c: r[i] if i < len(r) else None for i, c in enumerate(cols)})
+                    else:
+                        preview.append({"value": r})
+                return {
+                    "status": obj.get("status", "ok"),
+                    "columns": cols,
+                    "rows": len(rows),
+                    "data_preview": preview,
+                }
+
+            if isinstance(obj, list) and (not obj or isinstance(obj[0], dict)):
+                cols = list(obj[0].keys()) if obj else []
+                return {
+                    "status": "ok",
+                    "columns": cols,
+                    "rows": len(obj),
+                    "data_preview": obj[: self.PREVIEW_LIMIT],
+                }
+
+            if isinstance(obj, dict) and "results" in obj and isinstance(obj["results"], list) and obj["results"]:
+                first = obj["results"][0]
+                return normalize(first)
+
+            return {
+                "status": "ok",
+                "columns": [],
+                "rows": 0,
+                "data_preview": [obj],
+            }
+
+        norm = normalize(raw)
+        out = json.dumps(norm, ensure_ascii=False)
+        self._result_cache[key] = out
+        logger.info(
+            "[ExecuteQueryGuard] Rows=%s Preview=%s",
+            norm.get("rows"),
+            json.dumps(norm.get("data_preview", [])[:3], ensure_ascii=False)
+        )
+        print(f"[ExecuteQueryGuard] Executed SQL: {_short(sql)} => preview_rows={norm.get('rows')}")
+        return out
+
+
+class ToolAliasNoInput(BaseTool):
+    name: str
+    description: str = "Alias tool that forwards to another tool"
+    target_tool: Any
+    def reset_run(self):
+        if hasattr(self.target_tool, "reset_run"):
+            self.target_tool.reset_run()
+    def _run(self, *args, **kwargs): return asyncio.run(self._arun(*args, **kwargs))
+    async def _arun(self, *args, **kwargs):
+        print(f"[ToolAliasNoInput] Calling {self.target_tool.name}")
+        return await self.target_tool.arun({})
+
+class ToolAliasPassthrough(BaseTool):
+    name: str
+    description: str = "Alias tool that forwards to another tool"
+    target_tool: Any
+    def reset_run(self): pass
+    def _run(self, *args, **kwargs): return asyncio.run(self._arun(*args, **kwargs))
+    async def _arun(self, *args, **kwargs):
+        ti = kwargs.get("tool_input", None) or (args[0] if args else None)
+        print(f"[ToolAliasPassthrough] Calling {self.target_tool.name} with input: {_short(ti)}")
+        return await self.target_tool.arun(tool_input=ti)
 
 def generate_dashboard_with_ollama(
     sqls: List[str],
@@ -1221,37 +753,84 @@ def generate_dashboard_with_ollama(
             "format": fmt,
             "rawSql": sql,
         })
-
+    # Create the JSON schema for the LLM to follow
+    ts = now_timestamp()
+    json_schema = {
+        "dashboard": {
+            "title": f"String with timestamp - {ts}",
+            "schemaVersion": 36,
+            "version": 1,
+            "refresh": "5s",
+            "time": {"from": "now-5y", "to": "now"},
+            "timepicker": {
+                "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"],
+                "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d", "90d", "6M", "1y", "5y"]
+            },
+            "panels": [
+                {
+                    "id": "Integer - Panel ID",
+                    "type": "String - Panel type (barchart, piechart, table, timeseries, stat)",
+                    "title": "String - Panel title",
+                    "datasource": {"type": "postgres", "uid": "feyd4obe5zb40b"},
+                    "targets": [
+                        {
+                            "refId": "A",
+                            "format": "String - time_series or table",
+                            "rawSql": "String - PostgreSQL query"
+                        }
+                    ],
+                    "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+                    "options": {
+                        "tooltip": {"mode": "single"},
+                        "legend": {"displayMode": "list", "placement": "bottom"},
+                        "reduceOptions": {
+                            "calcs": ["lastNotNull"],
+                            "fields": "",
+                            "values": True
+                        }
+                    }
+                }
+            ]
+        },
+        "overwrite": False
+    }
     # System instructions kept lean and JSON-only
     system_msg = (
         "You are an expert in Grafana dashboard JSON (schemaVersion 36). "
         "Return EXACTLY one JSON object, no prose, no code fences. "
-        "Use this structure:\n"
+        "OUTPUT  JSON SCHEMA SHAPE TO FOLLOW (MANDATORY):\n"
+        + json.dumps(json_schema, indent=2) + "\n"
+        "PANEL JSON (MANDATORY — must match Grafana HTTP API expectations):\n"
+        "- Each item in dashboard.panels[] MUST include:\n"
+        "  id (int), gridPos {x,y,w,h}, title (str), type (str), targets [ {refId, rawSql, format} ]\n"
+        "- Do NOT put rawSql at the panel root; it MUST be inside targets[0].\n"
+        "- Example (single panel):\n"
         "{\n"
-        '  "dashboard": {\n'
-        '    "schemaVersion": 36,\n'
-        '    "title": "<dashboard_title>",\n'
-        '    "time": {"from": "<time_from>", "to": "<time_to>"},\n'
-        '    "refresh": "30s",\n'
-        '    "panels": [\n'
-        '      {"id": 0, "title": "Panel Title", "type": "panel_type",\n'
-        '       "gridPos": {"x":0,"y":0,"w":12,"h":8},\n'
-        '       "targets": [{"refId":"A","rawSql":"SQL_QUERY","format":"table_or_time_series"}]}\n'
-        "    ]\n"
-        "  },\n"
-        '  "overwrite": true\n'
+        '  "id": 0,\n'
+        '  "title": "Panel Title",\n'
+        '  "type": "stat",\n'
+        '  "gridPos": {"x":0,"y":0,"w":12,"h":8},\n'
+        '  "targets": [ {"refId":"A","rawSql":"SELECT 1","format":"table"} ]\n'
         "}\n"
-        "Panel/layout requirements:\n"
-        "- Panels are INSIDE dashboard.panels (not at root).\n"
-        "- id = 0..N-1.\n"
-        "- 24-col grid, h=8. Two-per-row: even index => x=0,y=(i//2)*8,w=12; odd => x=12,y=(i//2)*8,w=12.\n"
-        "- If panel count is odd, last panel is full width: x=0,y=(i//2)*8,w=24.\n"
-        "- Use the provided rawSql exactly; do not alter it.\n"
-        "- For each panel, create targets[0] with refId A, rawSql, and the given format.\n"
-        "- Do not invent extra keys. Only the fields shown above.\n"
-        "Return ONLY the JSON."
-    )
+        "LAYOUT (24-col grid):\n"
+        "- Two panels per row: w=12, h=8; x=0 (left) or x=12 (right); y increases by 8 each row.\n"
+        "- If N is odd, make the last panel full-width: w=24, x=0.\n"
+        "Algorithm for panel i (0-based), total N:\n"
+        "  if i == N-1 and N % 2 == 1:  x=0; y=(i//2)*8; w=24; h=8\n"
+        "  else if i % 2 == 0:          x=0; y=(i//2)*8; w=12; h=8\n"
+        "  else:                        x=12; y=(i//2)*8; w=12; h=8\n"
+        "TARGETS:\n"
+        "- For each panel create targets[0] = {\"refId\":\"A\",\"rawSql\":\"<SQL>\",\"format\":\"table|time_series\"}.\n"
+        "- Use the SQL from the user message verbatim.\n"
+        "STRICT JSON RULES:\n"
+        "- Double quotes for all keys/strings; no trailing commas; no extra top-level keys; "
+        "no additional quoting of values (use the value as-is)."
+        "TITLE RULE:\n"
+        "- Set dashboard.title EXACTLY to the provided 'dashboard_title' from the user message. Do not invent or copy the prompt.\n"
 
+    )
+    
+    
     user_msg = json.dumps({
         "dashboard_title": dashboard_title,
         "time_from": time_from,
@@ -1265,14 +844,18 @@ def generate_dashboard_with_ollama(
         "model": os.getenv("OLLAMA_MODEL", "llama3.1:8b"),
         "messages": [
             {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg}
+            {"role": "user", "content": user_msg},
         ],
+        "format": "json",
         "options": {
             "temperature": 0.0,
             "top_p": 1.0,
-            "num_predict": 1024
+            "num_predict": 4096,
+            "num_ctx": 8192,
+            "seed": 42
         },
-        "stream": False,   # <-- add this line
+        "keep_alive": "10m",
+        "stream": False
     }
 
 
@@ -1309,234 +892,442 @@ def generate_dashboard_with_ollama(
     # Some models prepend 'json' as a tag line
     if cleaned.lower().startswith("json\n"):
         cleaned = cleaned.split("\n", 1)[1].strip()
-
+    
     # Try direct parse first
     try:
         dashboard = json.loads(cleaned)
-    except Exception:
-        print(f"⚠️ Could not parse Ollama JSON: {cleaned[:400]}")       
-
+        
+    except Exception as e:
+        print(f"⚠️ Could not parse Ollama JSON: {cleaned}")       
+        raise RuntimeError(f"Ollama returned invalid JSON: {e}. Snippet: {cleaned}")
+    
     return dashboard
 
-def validate_with_pydantic(data: dict) -> Tuple[bool,str,Optional[DashboardSpec]]:
+
+def validate_with_pydantic(data: dict) -> Tuple[bool, str, Optional[DashboardSpec]]:
     try:
+        
         spec = DashboardSpec(**data)
-        print("[DEBUG] Pydantic validation → OK")
+        
         return True, "", spec
     except ValidationError as e:
         print(f"[ERROR] Pydantic validation → {e}")
         return False, str(e), None
     
+def _ensure_panel_formats(payload: dict) -> None:
+    """Guarantee each panel target has 'format' (Grafana requires it)."""
+    panels = (payload or {}).get("dashboard", {}).get("panels", [])
+    for panel in panels:
+        ptype = (panel.get("type") or "").lower()
+        default_fmt = "time_series" if ptype in ("timeseries", "line") else "table"
+        for t in panel.get("targets", []) or []:
+            if isinstance(t, dict) and not t.get("format"):
+                t["format"] = default_fmt
+
 # ----------------------------
-# POST /ask: run the agent (MCP-only)
+# intent prompt
+# ----------------------------
+ChartType = Literal["barchart","piechart","line","table","stat","gauge"]
+
+class Intent(BaseModel):
+    title: str = Field(..., min_length=3, max_length=120)
+    chart_type: ChartType
+    note: str = Field(default="", min_length=0)
+
+class IntentList(BaseModel):
+    intents: List[Intent]
+    
+def _ollama_json(system: str, user: str) -> dict:
+    payload = {
+        "model": os.getenv("OLLAMA_MODEL", "llama3.1:8b"),
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user",   "content": user},
+        ],
+        "format": "json",
+        "options": {"temperature": 0.0, "top_p": 1.0, "num_ctx": 8192},
+        "stream": False,
+    }
+    r = requests.post(OLLAMA_HTTP_URL, json=payload, timeout=OLLAMA_TIMEOUT)
+    r.raise_for_status()
+    data = r.json()
+    # Handle both normal and NDJSON-ish replies
+    raw = (data.get("message", {}) or {}).get("content", "") or (data.get("content") or "")
+    raw = str(raw).strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
+    try:
+        logger.info(f"[ollama_json] Extracted JSON: {_short(raw, 1000)}")
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        logger.error(f"[ollama_json] JSON decode failed: {e}; raw={_short(raw, 1000)}")
+        raise
+
+INTENT_SYSTEM = (
+    "You split one analytics request into multiple chart intents.\n"
+    "Return ONLY a single JSON object with EXACTLY this shape and key names:\n"
+    '{{"intents":[{{"title":"...", "chart_type":"barchart|piechart|line|table|stat|gauge", "note":"..."}}]}}\n'
+    "RULES:\n"
+    "- note MUST be a non-empty phrase (>= 3 chars) copied from the user's request segment for that intent.\n"
+    "- No prose. No code fences. No extra keys."
+)
+
+
+INTENT_USER_TMPL = """Prompt:
+{prompt}
+
+Respond exactly as:
+{{"intents":[{{"title":"...", "chart_type":"...", "note":"..."}}, ...]}}"""
+
+def llm_extract_intents_ollama_http(prompt: str) -> List[dict]:
+    try:
+        obj = _ollama_json(INTENT_SYSTEM, INTENT_USER_TMPL.format(prompt=prompt))
+        logger.info(f"[llm_extract_intents_ollama_http] input prompt: {prompt} Raw LLM output: {_short(obj)}")
+    except requests.RequestException as e:
+        logger.error(f"[intents/ollama] HTTP error: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"[intents/ollama] Parse error before validation: {e}")
+        raise
+
+    # ---- normalize top-level shape ----
+    try:
+        if isinstance(obj, list):
+            obj = {"intents": obj}
+        elif isinstance(obj, dict) and "intents" not in obj:
+            for it in obj["intents"]:
+                if not isinstance(it.get("note"), str) or len(it["note"].strip()) < 3:
+                    # backfill with the title (or original prompt segment if you keep that)
+                    it["note"] = it.get("title", "").strip()
+            if {"title","chart_type","note"}.issubset(set(obj.keys())):
+                obj = {"intents": [obj]}
+            elif "intent" in obj and isinstance(obj["intent"], dict):
+                obj = {"intents": [obj["intent"]]}
+            elif "items" in obj and isinstance(obj["items"], list):
+                obj = {"intents": obj["items"]}
+            else:
+                # Log what we got so we can refine later
+                logger.error(f"[intents/ollama] Unexpected shape: {obj}")
+                obj = {"intents": []}
+    except Exception as e:
+        logger.error(f"[intents/ollama] Normalization error: {e}; raw={obj}")
+        obj = {"intents": []}
+
+    # ---- validate ----
+    try:
+        validated = IntentList(**obj)
+    except ValidationError as ve:
+        logger.error(f"[intents/ollama] Validation failed: {ve}; raw_obj={_short(obj, 600)}")
+        raise
+
+    # ---- de-dupe ----
+    out, seen = [], set()
+    for it in validated.intents:
+        key = (it.title.strip().lower(), it.chart_type)
+        if key in seen: 
+            continue
+        seen.add(key)
+        out.append({"title": it.title.strip(),
+                    "chart_type": it.chart_type,
+                    "note": it.note.strip()})
+    return out
+
+
+
+# ---------------------------
+# Startup: configure LLM and base guards (with placeholders for MCP)
+# ----------------------------
+@app.on_event("startup")
+async def startup_event():
+    llm = ChatOllama(
+        model=OLLAMA_MODEL,
+        base_url=OLLAMA_BASE_URL,
+        temperature=0.0,
+        top_p=1.0,
+        model_kwargs={"keep_alive": "10m", "num_ctx": 4096},
+        disable_streaming=True,
+    )
+    app.state.llm = llm
+
+    # In a real setup, discover MCP tools here. We set inner_tool=None so our guards use demo fallbacks.
+    list_guard  = ListTablesGuard(inner_tool=HttpListTables())
+    schema_guard = GetTableSchemaGuard(inner_tool=HttpSchema())
+    schema_guard.list_tool = list_guard
+    exec_guard   = ExecuteQueryGuard(inner_tool=HttpExecute(), schema_tool=schema_guard)
+    print(f"[startup] Guards initialized with inner tools: list={list_guard.inner_tool}, schema={schema_guard.inner_tool}, exec={exec_guard.inner_tool}")
+    logger.info(f"[startup] Guards initialized with inner tools: list={list_guard.inner_tool}, schema={schema_guard.inner_tool}, exec={exec_guard.inner_tool}")
+    app.state.list_guard = list_guard
+    app.state.schema_guard = schema_guard
+    app.state.exec_guard = exec_guard
+    app.state.tools = {
+        "sql.list_tables": list_guard,
+        "sql.schema": schema_guard,
+        "sql.query": exec_guard,
+    }
+    
+    logger.info("[STARTUP] LLM and guards ready")
+    print("[STARTUP] LLM and guards ready")
+# ----------------------------
+# /ask endpoint: per-intent ReAct agents
 # ----------------------------
 @app.post("/ask")
 async def ask_sql(req: PromptRequest):
-    if not hasattr(app.state, "executor"):
-        raise HTTPException(status_code=503, detail="Agent not ready")
-
     ts = now_timestamp()
     start = time.perf_counter()
-
+    
     raw_input = (req.prompt or "").strip()
+    if not raw_input:
+        return {"status": "error", "timestamp": ts, "summary": "Final Answer: " + json.dumps({"error":"Empty prompt"})}
+    
+    # system_text = (req.system_text or "").strip()
+    system_text = (req.system_text or DEFAULT_SYSTEM_TEXT).strip()
+    
+    if not system_text:
+        return {"status":"error","timestamp":ts,"summary":"Final Answer: " + json.dumps({"error":"Missing system_text"})}
+    print(f"🧠 [ask_sql] Received prompt: {_short(raw_input)}")
     user_input = normalize_synonyms(raw_input)
-    print(f"🧠 USER INPUT → {_short(user_input)}")
-
-    # Clear ExecuteQueryGuard schema cache for this run (if present)
-    exec_tool = app.state.tools.get("execute_query")
-    if exec_tool and hasattr(exec_tool, "_schema_cache"):
-        try:
-            exec_tool._schema_cache = {}
-        except Exception as e:
-            print(f"⚠️ could not clear schema cache: {e}")
-
-    # Clear per-run seen for schema guard so repeats are only flagged within a single request
-    schema_tool = app.state.tools.get("get_table_schema")
-    if schema_tool and hasattr(schema_tool, "_seen_this_run"):
-        schema_tool._seen_this_run = set()
-
-    # ---------- Agent invocation ----------
+    # intents = extract_intents_from_prompt(user_input)
     try:
-        result: dict = await asyncio.wait_for(
-            app.state.executor.ainvoke({"input": user_input}),
-            timeout=45
+        intents = llm_extract_intents_ollama_http(user_input)
+        print(f"[ask_sql] LLM extracted {len(intents)} intents")    
+    except Exception:
+        intents = extract_intents_from_prompt(user_input)  
+        print(f"[ask_sql] Fallback extracted {len(intents)} intents")
+
+    N = len(intents)
+    if N == 0:
+        return {"status":"error","timestamp":ts,"summary":"Final Answer: " + json.dumps({"error":"No intents found."})}
+    if N > MAX_PANELS:
+        return {"status":"error","timestamp":ts,"summary":"Final Answer: " + json.dumps({"error":f"Requested {N} charts exceeds MAX_PANELS={MAX_PANELS}."})}
+    logger.info(f"[ask_sql] {N} intents extracted: {[_short(i) for i in intents]}")
+    print(f"[ask_sql] {N} intents extracted: {[_short(i) for i in intents]}")
+    # Run one agent per intent concurrently
+    tasks = []
+    for intent in intents:
+        intent_text = intent.get("note") or intent.get("title") or ""
+        print(f"[ask_sql] Launching agent for intent: {intent_text}")
+        logger.info(f"[ask_sql] Launching agent for intent: {intent_text}")
+        # Fresh guards per agent (so memo/caches are per-run)
+        inner_list = app.state.list_guard.inner_tool
+        inner_schema = app.state.schema_guard.inner_tool
+        inner_exec = app.state.exec_guard.inner_tool
+        print(f"[ask_sql] Using inner tools: list={inner_list}, schema={inner_schema}, exec={inner_exec}")
+        logger.info(f"[ask_sql] Using inner tools: list={inner_list}, schema={inner_schema}, exec={inner_exec}")
+        list_guard = ListTablesGuard(inner_tool=inner_list)
+        schema_guard = GetTableSchemaGuard(inner_tool=inner_schema)
+        schema_guard.list_tool = list_guard
+        exec_guard = ExecuteQueryGuard(inner_tool=inner_exec, schema_tool=schema_guard)
+
+        agent_tools = []
+        agent_tools.append(ToolAliasNoInput(name="sql.list_tables", target_tool=list_guard))
+        agent_tools.append(ToolAliasPassthrough(name="sql.schema", target_tool=schema_guard))
+        agent_tools.append(ToolAliasPassthrough(name="sql.query", target_tool=exec_guard))
+        print(f"[ask_sql] Agent tools: {[t.name for t in agent_tools]}")
+        logger.info(f"[ask_sql] Agent tools: {[t.name for t in agent_tools]}")
+        
+        prompt_template = ChatPromptTemplate.from_messages([
+            ("system", system_text),
+            ("system", "{tools}\n\nValid tool names: {tool_names}"),
+            # ("system", "When you produce the Final Answer, follow this JSON schema:\n{format_instructions}"),
+            ("system",
+            "When you finish, emit exactly one line:\n"
+            "Final Answer: {{\"results\": [ {{\"sql\": \"...\", \"viz\": {{\"type\":\"barchart|line|piechart|table|stat|gauge\", \"format\":\"table|time_series\", \"title\":\"...\"}} }} ] }}\n"
+            "No code fences. No extra text. Do not say anything like 'Here is the corrected output:'."),
+            ("human", "{input}\n\n{agent_scratchpad}")
+        ])
+
+
+        agent = create_react_agent(llm=app.state.llm, tools=agent_tools, prompt=prompt_template)
+
+        executor = AgentExecutor.from_agent_and_tools(
+            agent=agent,
+            tools=agent_tools,
+            verbose=True,
+            max_iterations=8,            # ↓ lower to avoid long loops
+            early_stopping_method="force",
+            # return_intermediate_steps=False,
+            handle_parsing_errors=(
+                "Reformat your last message to comply with ReAct:\n"
+                "It must be either:\n"
+                '1) Thought: ...\\nAction: <tool name>\\nAction Input: { ... }\n'
+                "or\n"
+                '2) Final Answer: {"results":[{"sql":"...","viz":{"type":"...","format":"...","title":"..."}}]}\n'
+                "No code fences. No extra text."
+            ),
         )
-    except asyncio.TimeoutError:
-        record_metric(prompt=req.prompt, start_ts=start, success=False, error_msg="Timeout while processing your request.", iterations=0, function_times={})
-        return {"status": "error", "timestamp": ts, "sql": None, "summary": "Timeout while processing your request."}
-    except Exception as e:
-        msg = str(e)
-        record_metric(prompt=req.prompt, start_ts=start, success=False, error_msg=msg, iterations=0, function_times={})
-        return {"status": "error", "timestamp": ts, "sql": None, "summary": msg}
 
-    steps = result.get("intermediate_steps", [])
-    results_payload: List[Dict[str, Any]] = []
+        print(f"[ask_sql] Agent created with max_iterations={executor.max_iterations}")
+        
 
-    # Collect all successful execute_query calls (even if model stopped early)
-    for action, observation in steps:
-        if getattr(action, "tool", None) == "execute_query":
-            ti = getattr(action, "tool_input", None)
-            params = {}
-            if isinstance(ti, dict):
-                params = ti.get("kwargs", ti)
-            elif isinstance(ti, str):
-                s = ti.strip()
-                if s.startswith("{") and s.endswith("}"):
-                    try:
-                        obj = json.loads(s)
-                        params = obj.get("kwargs", obj) if isinstance(obj, dict) else {}
-                    except Exception:
-                        params = {}
-            sql = params.get("query") or params.get("sql")
-            if isinstance(sql, list):
-                sql = " ".join(str(x) for x in sql)
-            if isinstance(sql, str) and sql.strip():
-                results_payload.append({
-                    "sql": sql.strip(),
-                    "viz": {
-                        "type": (params.get("chart_type") or "table"),
-                        "format": (params.get("format") or "table"),
-                        "title": (params.get("title") or "Result"),
-                    }
-                })
+        tasks.append(asyncio.create_task(executor.ainvoke({
+            "input": intent_text,
+            "tools": "\n".join(f"- {t.name}" for t in agent_tools),
+            "tool_names": ", ".join(t.name for t in agent_tools),
+            "format_instructions": FORMAT_INSTRUCTIONS,
+        })))
 
-    final_message = result.get("output")
-    print(f"📝 FINAL MESSAGE → {_short(final_message)}")
+        
+                                               
+    print(f"[ask_sql] Launched {len(tasks)} agents concurrently")
+    logger.info(f"[ask_sql] Launched {len(tasks)} agents concurrently")
+    responses = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Prefer explicit Final Answer with results[] if present
-    fa_obj = _parse_final_answer_obj(final_message) if isinstance(final_message, str) else None
-    existing_sqls = {r.get("sql") for r in results_payload if isinstance(r, dict) and isinstance(r.get("sql"), str)}
+    results: List[Dict[str, Any]] = []
+    for resp in responses:
+        if isinstance(resp, Exception):
+            logger.error(f"Agent error: {resp}")
+            continue
 
-    if isinstance(fa_obj, dict) and isinstance(fa_obj.get("results"), list):
-        for raw_item in fa_obj["results"]:
-            norm = _normalize_result_item(raw_item)
-            if norm and norm["sql"] not in existing_sqls:
-                results_payload.append(norm)
-                existing_sqls.add(norm["sql"])
+        output = resp.get("output") if isinstance(resp, dict) else str(resp)
+        if not output:
+            logger.error("Empty agent output")
+            continue
 
-    # If nothing collected, attempt single-SQL rescue
-    if not results_payload:
-        rescued_sqls: List[str] = []
-        # ... your rescue extraction code ...
-        if not rescued_sqls:
-            msg = "No valid SQL was produced."
-            record_metric(prompt=req.prompt, start_ts=start, success=False, error_msg=msg,
-                          iterations=len(steps), function_times={})
-            return {"status": "error", "timestamp": ts, "sql": None, "summary": msg}
+        # fa_obj = _parse_final_answer_obj(output)
+        fa_obj = _parse_any_json(output) 
+        if not isinstance(fa_obj, dict):
+            logger.error(f"Could not parse JSON from agent output: {output[:300]}")
+            continue
 
-        # Build a minimal results payload from rescued SQLs
-        dedup_rescued: List[Dict[str, Any]] = []
-        seen: set = set()
-        for q in rescued_sqls:
-            if q and q not in seen:
-                seen.add(q)
-                dedup_rescued.append({
-                    "sql": q,
-                    "viz": {"type": "table", "format": "table", "title": "Result"}
-                })
+        items = fa_obj.get("results", [])
+        if not isinstance(items, list):
+            logger.error("Parse error: 'results' is not a list")
+            continue
 
-        record_metric(prompt=req.prompt, start_ts=start, success=True, error_msg="",
-                      iterations=len(steps), function_times={})
-        return {
-            "status": "success",
-            "timestamp": ts,
-            "sql": ";\n".join([r["sql"] for r in dedup_rescued]),
-            "summary": "Final Answer: " + json.dumps({"results": dedup_rescued}),
-        }
+        for item in items:
+            norm = _normalize_result_item(item)
+            if norm:
+                results.append(norm)
 
-    # ---------- NORMAL PATH (results collected) ----------
-    # Deduplicate, normalize viz, and cap to 4 panels
-    dedup: List[Dict[str, Any]] = []
-    seen_sql = set()
-    for r in results_payload:
-        s = r.get("sql")
-        if isinstance(s, str) and s not in seen_sql:
-            seen_sql.add(s)
-            viz = r.get("viz") or {}
-            if "title" not in viz:
-                viz["title"] = "Result"
-            r["viz"] = viz
+
+      
+    print(f"[ask_sql] Collected {len(results)} raw results from agents")
+    logger.info(f"[ask_sql] Collected {len(results)} raw results from agents")
+    # Dedupe and cap to N
+    seen=set(); dedup=[]
+    for r in results:
+        fp = _sql_fingerprint(r["sql"])
+        if fp not in seen:
+            seen.add(fp); 
             dedup.append(r)
-    dedup = dedup[:4]
-
-    # Always build the Final Answer JSON the client expects
+    dedup = dedup[:N]
+    
+    seen_title = { (r.get("viz") or {}).get("title") or r.get("title") for r in dedup if (r.get("viz") or {}).get("title") or r.get("title") }
+    
+    short_title =  ", ".join(seen_title) 
+    print(f"🖼️ titles: {short_title}")
+    logger.info(f"[/ASK] Deduped final results: {dedup}")
     final_answer = {"results": dedup}
     sql_preview = ";\n".join([r["sql"] for r in dedup])
-
+    logger.info(f"[/ASK] Final SQL preview: {sql_preview}")
     print("📝 Final Answer SQL preview:")
     print(sql_preview[:200] + ("..." if len(sql_preview) > 200 else ""))
 
-   
     print(f"📝 Building dashboard JSON with {len(dedup)} panels (Ollama) + validate + push...")
-    extra = {}
+
+    # prepare shared containers
+    extra: Dict[str, Any] = {}
     fn_times: Dict[str, int] = {}
+    success = False
+    error_msg = ""
 
-    try:
-        # 6) Generate dashboard JSON with Ollama
-        sqls        = [r["sql"] for r in dedup]
-        chart_types = [(r.get("viz") or {}).get("type", "table") for r in dedup]
-        titles      = [(r.get("viz") or {}).get("title", "Panel") for r in dedup]
-
-        dashboard_obj = time_call(
-            fn_times, "ollama_generate",
-            generate_dashboard_with_ollama,
-            sqls=sqls,
-            chart_types=chart_types,
-            titles=titles,
-            dashboard_title=f'{(req.prompt or "Dashboard")} - {ts}',
-            time_from="now-5y",
-            time_to="now",
-        )
-        print(f"✅ Dashboard JSON created, title: {dashboard_obj.get('dashboard', {}).get('title', 'No title')}")
-
-        # 7) Pydantic validation (or pass-through)
-        ok, err, validated = time_call(fn_times, "validate", validate_with_pydantic, dashboard_obj)
-        if not ok:
-            raise RuntimeError(f"Final dashboard invalid: {err}")
-
-        # Build the outgoing JSON payload
-        validated_json = validated.dict(by_alias=True) if hasattr(validated, "dict") else validated
-        print(f"✅ Dashboard JSON validated, keys: {list(validated_json.keys())}")
-        # 8) Push to Grafana MCP
-        graf = time_call(
-            fn_times, "post_grafana", requests.post,
-            os.getenv("GRAFANA_MCP_URL", "http://grafana-mcp:8000/create_dashboard"),
-            headers={"Content-Type": "application/json"},
-            json=validated_json,
-            timeout=30
-        )
-        graf.raise_for_status()
-        print(f"✅ Dashboard JSON pushed to Grafana MCP, status: {graf.status_code}")
-        # Some MCP servers return text rather than JSON
+    if dedup:  # we have at least one SQL/panel
         try:
-            graf_result = graf.json()
-        except Exception:
-            graf_result = {"text": graf.text}
+            sqls = [r["sql"] for r in dedup]
+            chart_types = [(r.get("viz") or {}).get("type", "table") for r in dedup]
+            titles = [(r.get("viz") or {}).get("title", "Panel") for r in dedup]
 
-        # Expose details in the response
-        extra.update({
-            "grafana_result": graf_result,
-            "validated": (validated.dict(by_alias=True, exclude_none=True)
-                        if hasattr(validated, "dict") else validated),
-            "function_times_ms": fn_times
-        })
-        print(f"[DEBUG] dashboard keys: {list(dashboard_obj.keys())} "
-            f"- validated keys: {list(validated_json.keys())}")
+            short_title = f"{short_title} — {ts}"
+            logger.info(f"[/ASK] Generating dashboard with title: {short_title}")
 
-    except Exception as e:
-        print(f"❌ Dashboard step failed: {e}")
-        extra["dashboard_error"] = str(e)
+            dashboard_obj = time_call(
+                fn_times,
+                "ollama_generate",
+                generate_dashboard_with_ollama,
+                sqls=sqls,
+                chart_types=chart_types,
+                titles=titles,
+                dashboard_title=short_title,
+                time_from="now-5y",
+                time_to="now",
+            )
 
+            _ensure_panel_formats(dashboard_obj)
+            ok, err, validated = time_call(fn_times, "validate", validate_with_pydantic, dashboard_obj)
+            logger.info(f"[/ASK] Dashboard validation result: ok={ok}, err={err}")
+            if not ok:
+                raise RuntimeError(f"Final dashboard invalid: {err}")
 
+            validated_json = validated.dict(by_alias=True) if hasattr(validated, "dict") else validated
 
-    record_metric(prompt=req.prompt, start_ts=start, success=True, error_msg="",
-                iterations=len(steps), function_times={})
-    return {
-        "status": "success",
-        "timestamp": ts,
-        "sql": sql_preview,
-        "summary": "Final Answer: " + json.dumps(final_answer),
-        **extra,
-    }
+            logger.info(f"[/ASK] Posting dashboard to Grafana MCP endpoint.")
+            graf = time_call(
+                fn_times,
+                "post_grafana",
+                requests.post,
+                os.getenv("GRAFANA_MCP_URL", "http://grafana-mcp:8000/create_dashboard"),
+                headers={"Content-Type": "application/json"},
+                json=validated_json,
+                timeout=30,
+            )
+            graf.raise_for_status()
 
+            try:
+                graf_result = graf.json()
+                logger.info(f"[/ASK] Grafana MCP response: {graf_result}")
+            except Exception:
+                graf_result = {"text": graf.text}
 
+            extra.update(
+                {
+                    "grafana_result": graf_result,
+                    "validated": (
+                        validated.dict(by_alias=True, exclude_none=True) if hasattr(validated, "dict") else validated
+                    ),
+                    "function_times_ms": fn_times,
+                }
+            )
+            logger.info(f"[/ASK] Dashboard created successfully.")
+            print(f"✅ Dashboard created: {graf_result}")
+
+            success = True
+
+        except Exception as e:
+            print(f"❌ Dashboard step failed: {e}")
+            logger.exception("Dashboard pipeline failed")
+            extra["dashboard_error"] = str(e)
+            error_msg = str(e)
+    else:
+        print("❌ No valid SQL generated; skipping dashboard creation.")
+        logger.error("No valid SQL generated; skipping dashboard creation.")
+        error_msg = "No valid SQL generated"
+
+    # one place to record metrics (no undefined 'steps')
+    try:
+        record_metric(
+            prompt=req.prompt,
+            start_ts=start,
+            success=success,
+            error_msg=error_msg,
+            iterations=len(dedup),
+            function_times=fn_times,
+        )
+    except Exception:
+        logger.exception("record_metric failed")
+
+    if success:
+        return {
+            "status": "success",
+            "timestamp": ts,
+            "sql": sql_preview,
+            "summary": "Final Answer: " + json.dumps(final_answer),
+            **extra,
+        }
+    else:
+        return {
+            "status": "error",
+            "timestamp": ts,
+            "sql": sql_preview,
+            "summary": "Final Answer: " + json.dumps({"error": error_msg or "No valid SQL generated."}),
+            **extra,
+        }

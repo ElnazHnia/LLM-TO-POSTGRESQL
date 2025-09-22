@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 import re
 
@@ -11,7 +11,7 @@ class GridPos(BaseModel):
 class Datasource(BaseModel):
     type: str = "postgres"
     # uid: str = "aeo8prusu1i4gc"
-    uid: str = "desl46jinre9sb" 
+    uid: str = "feyd4obe5zb40b" 
     
 
 class Target(BaseModel):
@@ -74,8 +74,9 @@ class DashboardSpec(BaseModel):
     dashboard: DashboardContent
     overwrite: bool = False
 
-    class Config:
-        allow_population_by_field_name = True
+    # class Config:
+    #     allow_population_by_field_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 class Target(BaseModel):
     refId:  str = Field(

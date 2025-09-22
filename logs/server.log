@@ -1,0 +1,214 @@
+2025-09-20 07:48:57,130 INFO uvicorn.error - Started server process [1]
+2025-09-20 07:48:57,130 INFO uvicorn.error - Waiting for application startup.
+2025-09-20 07:48:57,154 INFO uvicorn.error - Application startup complete.
+2025-09-20 07:48:57,154 INFO uvicorn.error - Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2025-09-20 07:49:36,090 INFO uvicorn.access - 172.18.0.1:34424 - "POST /ask HTTP/1.1" 200
+2025-09-20 08:13:55,022 INFO uvicorn.error - Started server process [1]
+2025-09-20 08:13:55,022 INFO uvicorn.error - Waiting for application startup.
+2025-09-20 08:13:55,045 INFO uvicorn.error - Application startup complete.
+2025-09-20 08:13:55,045 INFO uvicorn.error - Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2025-09-20 08:14:35,434 INFO uvicorn.access - 172.18.0.1:56604 - "POST /ask HTTP/1.1" 200
+2025-09-20 09:06:27,525 INFO uvicorn.error - Shutting down
+2025-09-20 09:06:27,625 INFO uvicorn.error - Waiting for application shutdown.
+2025-09-20 09:06:27,625 INFO uvicorn.error - Application shutdown complete.
+2025-09-20 09:06:27,626 INFO uvicorn.error - Finished server process [1]
+2025-09-20 09:22:04,311 INFO uvicorn.error - Started server process [1]
+2025-09-20 09:22:04,311 INFO uvicorn.error - Waiting for application startup.
+2025-09-20 09:22:04,319 INFO uvicorn.error - Application startup complete.
+2025-09-20 09:22:04,319 INFO uvicorn.error - Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2025-09-20 09:22:07,005 INFO uvicorn.access - 172.18.0.1:52632 - "POST /ask HTTP/1.1" 422
+2025-09-20 09:22:32,941 INFO uvicorn.access - 172.18.0.1:39486 - "POST /ask HTTP/1.1" 422
+2025-09-20 09:51:53,112 INFO uvicorn.error - Shutting down
+2025-09-20 09:51:53,213 INFO uvicorn.error - Waiting for application shutdown.
+2025-09-20 09:51:53,213 INFO uvicorn.error - Application shutdown complete.
+2025-09-20 09:51:53,213 INFO uvicorn.error - Finished server process [1]
+2025-09-20 10:19:16,520 INFO uvicorn.error - Started server process [1]
+2025-09-20 10:19:16,520 INFO uvicorn.error - Waiting for application startup.
+2025-09-20 10:19:16,527 INFO uvicorn.error - Application startup complete.
+2025-09-20 10:19:16,527 INFO uvicorn.error - Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2025-09-20 10:19:21,260 INFO uvicorn.access - 172.18.0.1:48314 - "POST /ask HTTP/1.1" 422
+2025-09-20 10:47:03,327 INFO uvicorn.error - Shutting down
+2025-09-20 10:47:03,427 INFO uvicorn.error - Waiting for application shutdown.
+2025-09-20 10:47:03,427 INFO uvicorn.error - Application shutdown complete.
+2025-09-20 10:47:03,427 INFO uvicorn.error - Finished server process [1]
+2025-09-20 10:48:22,385 INFO uvicorn.error - Started server process [1]
+2025-09-20 10:48:22,385 INFO uvicorn.error - Waiting for application startup.
+2025-09-20 10:48:22,392 INFO uvicorn.error - Application startup complete.
+2025-09-20 10:48:22,392 INFO uvicorn.error - Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2025-09-20 10:48:27,678 INFO uvicorn.access - 172.18.0.1:60208 - "POST /ask HTTP/1.1" 500
+2025-09-20 10:48:27,679 ERROR uvicorn.error - Exception in ASGI application
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/h11_impl.py", line 403, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1054, in __call__
+    await super().__call__(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 113, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 78, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 75, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 302, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 213, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/llm_api.py", line 725, in ask_sql
+    agent = create_react_agent(llm=app.state.llm, tools=agent_tools, prompt=prompt_template)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/langchain/agents/react/agent.py", line 125, in create_react_agent
+    raise ValueError(msg)
+ValueError: Prompt missing required variables: {'tools', 'tool_names'}
+2025-09-20 10:49:05,829 INFO uvicorn.error - Shutting down
+2025-09-20 10:49:05,929 INFO uvicorn.error - Waiting for application shutdown.
+2025-09-20 10:49:05,929 INFO uvicorn.error - Application shutdown complete.
+2025-09-20 10:49:05,929 INFO uvicorn.error - Finished server process [1]
+2025-09-20 10:55:22,968 INFO uvicorn.error - Started server process [1]
+2025-09-20 10:55:22,975 INFO uvicorn.error - Waiting for application startup.
+2025-09-20 10:55:22,982 INFO uvicorn.error - Application startup complete.
+2025-09-20 10:55:22,982 INFO uvicorn.error - Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2025-09-20 10:58:04,303 INFO uvicorn.access - 172.18.0.1:37700 - "POST /ask HTTP/1.1" 200
+2025-09-20 11:02:44,886 INFO uvicorn.error - Shutting down
+2025-09-20 11:02:44,987 INFO uvicorn.error - Waiting for application shutdown.
+2025-09-20 11:02:44,987 INFO uvicorn.error - Application shutdown complete.
+2025-09-20 11:02:44,987 INFO uvicorn.error - Finished server process [1]
+2025-09-21 07:11:14,853 INFO uvicorn.error - Started server process [1]
+2025-09-21 07:11:14,853 INFO uvicorn.error - Waiting for application startup.
+2025-09-21 07:11:14,860 INFO uvicorn.error - Application startup complete.
+2025-09-21 07:11:14,860 INFO uvicorn.error - Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2025-09-21 07:21:40,165 INFO uvicorn.error - Shutting down
+2025-09-21 07:21:40,266 INFO uvicorn.error - Waiting for connections to close. (CTRL+C to force quit)
+2025-09-21 07:27:48,730 INFO uvicorn.error - Started server process [1]
+2025-09-21 07:27:48,730 INFO uvicorn.error - Waiting for application startup.
+2025-09-21 07:27:48,737 INFO uvicorn.error - Application startup complete.
+2025-09-21 07:27:48,737 INFO uvicorn.error - Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2025-09-21 07:27:53,710 INFO uvicorn.access - 172.18.0.1:53004 - "POST /ask HTTP/1.1" 500
+2025-09-21 07:27:53,710 ERROR uvicorn.error - Exception in ASGI application
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/h11_impl.py", line 403, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1054, in __call__
+    await super().__call__(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 113, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 78, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 75, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 302, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 213, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/llm_api.py", line 752, in ask_sql
+    print(f"[ask_sql] Prompt template:\n{prompt_template.format_prompt(input=intent_text, tools=', '.join(f'- {t.name}' for t in agent_tools), tool_names=', '.join(t.name for t in agent_tools)).to_string()}")
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/langchain_core/prompts/chat.py", line 726, in format_prompt
+    messages = self.format_messages(**kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/langchain_core/prompts/chat.py", line 1211, in format_messages
+    message = message_template.format_messages(**kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/langchain_core/prompts/chat.py", line 559, in format_messages
+    return [self.format(**kwargs)]
+            ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/langchain_core/prompts/chat.py", line 592, in format
+    text = self.prompt.format(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/langchain_core/prompts/prompt.py", line 201, in format
+    return DEFAULT_FORMATTER_MAPPING[self.template_format](self.template, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/string.py", line 190, in format
+    return self.vformat(format_string, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/langchain_core/utils/formatting.py", line 33, in vformat
+    return super().vformat(format_string, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/string.py", line 194, in vformat
+    result, _ = self._vformat(format_string, args, kwargs, used_args, 2)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/string.py", line 234, in _vformat
+    obj, arg_used = self.get_field(field_name, args, kwargs)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/string.py", line 299, in get_field
+    obj = self.get_value(first, args, kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/string.py", line 256, in get_value
+    return kwargs[key]
+           ~~~~~~^^^^^
+KeyError: 'agent_scratchpad'
+2025-09-21 07:35:16,915 INFO uvicorn.error - Started server process [1]
+2025-09-21 07:35:16,922 INFO uvicorn.error - Waiting for application startup.
+2025-09-21 07:35:16,929 INFO uvicorn.error - Application startup complete.
+2025-09-21 07:35:16,929 INFO uvicorn.error - Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2025-09-21 07:36:51,485 INFO uvicorn.access - 172.18.0.1:47938 - "POST /ask HTTP/1.1" 200
+2025-09-21 07:47:40,945 INFO uvicorn.error - Shutting down
+2025-09-21 07:47:41,045 INFO uvicorn.error - Waiting for application shutdown.
+2025-09-21 07:47:41,045 INFO uvicorn.error - Application shutdown complete.
+2025-09-21 07:47:41,045 INFO uvicorn.error - Finished server process [1]
+2025-09-21 07:48:43,885 INFO uvicorn.error - Started server process [1]
+2025-09-21 07:48:43,885 INFO uvicorn.error - Waiting for application startup.
+2025-09-21 07:48:43,892 INFO uvicorn.error - Application startup complete.
+2025-09-21 07:48:43,893 INFO uvicorn.error - Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2025-09-21 07:51:46,911 INFO uvicorn.access - 172.18.0.1:34596 - "POST /ask HTTP/1.1" 200
+2025-09-21 07:54:22,755 INFO uvicorn.error - Shutting down
+2025-09-21 07:54:22,855 INFO uvicorn.error - Waiting for application shutdown.
+2025-09-21 07:54:22,855 INFO uvicorn.error - Application shutdown complete.
+2025-09-21 07:54:22,855 INFO uvicorn.error - Finished server process [1]
+2025-09-21 08:09:23,448 INFO uvicorn.error - Started server process [1]
+2025-09-21 08:09:23,448 INFO uvicorn.error - Waiting for application startup.
+2025-09-21 08:09:23,455 INFO uvicorn.error - Application startup complete.
+2025-09-21 08:09:23,456 INFO uvicorn.error - Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2025-09-21 08:10:14,169 INFO uvicorn.access - 172.18.0.1:41560 - "POST /ask HTTP/1.1" 200

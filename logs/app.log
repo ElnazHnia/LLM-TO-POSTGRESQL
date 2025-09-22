@@ -1,0 +1,837 @@
+2025-09-20 07:48:57,125 INFO src.llm_api - [ExecuteQueryGuard] Initializing ExecuteQueryGuard
+2025-09-20 07:48:57,125 INFO src.llm_api - [ExecuteQueryGuard] Setting up format map
+2025-09-20 07:48:57,138 INFO src.llm_api - [STARTUP] Using LLM model: llama3.1:8b @ http://ollama:11434
+2025-09-20 07:48:57,145 INFO httpx - HTTP Request: POST http://mcp_server:8000/mcp/ "HTTP/1.1 307 Temporary Redirect"
+2025-09-20 07:48:57,147 INFO httpx - HTTP Request: POST http://mcp_server:8000/mcp "HTTP/1.1 200 OK"
+2025-09-20 07:48:57,147 INFO mcp.client.streamable_http - Received session ID: 4d146582fc9940a1a873cb13cec3f8eb
+2025-09-20 07:48:57,148 INFO mcp.client.streamable_http - Negotiated protocol version: 2025-06-18
+2025-09-20 07:48:57,149 INFO httpx - HTTP Request: POST http://mcp_server:8000/mcp/ "HTTP/1.1 307 Temporary Redirect"
+2025-09-20 07:48:57,150 INFO httpx - HTTP Request: GET http://mcp_server:8000/mcp/ "HTTP/1.1 307 Temporary Redirect"
+2025-09-20 07:48:57,150 INFO httpx - HTTP Request: POST http://mcp_server:8000/mcp "HTTP/1.1 202 Accepted"
+2025-09-20 07:48:57,151 INFO httpx - HTTP Request: POST http://mcp_server:8000/mcp/ "HTTP/1.1 307 Temporary Redirect"
+2025-09-20 07:48:57,152 INFO httpx - HTTP Request: POST http://mcp_server:8000/mcp "HTTP/1.1 200 OK"
+2025-09-20 07:48:57,153 INFO httpx - HTTP Request: DELETE http://mcp_server:8000/mcp/ "HTTP/1.1 307 Temporary Redirect"
+2025-09-20 07:48:57,153 INFO httpx - HTTP Request: DELETE http://mcp_server:8000/mcp "HTTP/1.1 200 OK"
+2025-09-20 07:48:57,154 INFO src.llm_api - [STARTUP] Loaded MCP tools: ['get_db_dialect', 'get_usable_table_names', 'sql.list_tables', 'sql.schema', 'sql.example', 'sql.check', 'sql.query']
+2025-09-20 07:48:57,154 INFO src.llm_api - [STARTUP] Chains ready; guards wired: list=True schema=True exec=True
+2025-09-20 07:49:05,851 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-20 07:49:11,839 INFO src.llm_api - [ExecuteQueryGuard] _arun called
+2025-09-20 07:49:13,998 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-20 07:49:19,207 INFO src.llm_api - [ExecuteQueryGuard] _arun called
+2025-09-20 07:49:19,207 ERROR src.llm_api - ❌ intent failed after retry: Average Sales per Person :: ERROR: execute_query requires a single string param 'sql'.
+2025-09-20 07:49:20,823 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-20 07:49:27,485 INFO src.llm_api - [ExecuteQueryGuard] _arun called
+2025-09-20 07:49:29,580 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-20 07:49:36,076 INFO src.llm_api - [ExecuteQueryGuard] _arun called
+2025-09-20 07:49:36,077 ERROR src.llm_api - ❌ intent failed after retry: Annually Sales :: ERROR: execute_query requires a single string param 'sql'.
+2025-09-20 08:13:55,017 INFO src.llm_api - [ExecuteQueryGuard] Initializing ExecuteQueryGuard
+2025-09-20 08:13:55,017 INFO src.llm_api - [ExecuteQueryGuard] Setting up format map
+2025-09-20 08:13:55,030 INFO src.llm_api - [STARTUP] Using LLM model: llama3.1:8b @ http://ollama:11434
+2025-09-20 08:13:55,037 INFO httpx - HTTP Request: POST http://mcp_server:8000/mcp/ "HTTP/1.1 307 Temporary Redirect"
+2025-09-20 08:13:55,039 INFO httpx - HTTP Request: POST http://mcp_server:8000/mcp "HTTP/1.1 200 OK"
+2025-09-20 08:13:55,039 INFO mcp.client.streamable_http - Received session ID: 4b5a3207d8e04af5b819b7bb61c4ef00
+2025-09-20 08:13:55,039 INFO mcp.client.streamable_http - Negotiated protocol version: 2025-06-18
+2025-09-20 08:13:55,040 INFO httpx - HTTP Request: POST http://mcp_server:8000/mcp/ "HTTP/1.1 307 Temporary Redirect"
+2025-09-20 08:13:55,041 INFO httpx - HTTP Request: POST http://mcp_server:8000/mcp "HTTP/1.1 202 Accepted"
+2025-09-20 08:13:55,041 INFO httpx - HTTP Request: GET http://mcp_server:8000/mcp/ "HTTP/1.1 307 Temporary Redirect"
+2025-09-20 08:13:55,043 INFO httpx - HTTP Request: POST http://mcp_server:8000/mcp/ "HTTP/1.1 307 Temporary Redirect"
+2025-09-20 08:13:55,044 INFO httpx - HTTP Request: POST http://mcp_server:8000/mcp "HTTP/1.1 200 OK"
+2025-09-20 08:13:55,044 INFO httpx - HTTP Request: DELETE http://mcp_server:8000/mcp/ "HTTP/1.1 307 Temporary Redirect"
+2025-09-20 08:13:55,045 INFO httpx - HTTP Request: DELETE http://mcp_server:8000/mcp "HTTP/1.1 200 OK"
+2025-09-20 08:13:55,045 INFO src.llm_api - [STARTUP] Loaded MCP tools: ['get_db_dialect', 'get_usable_table_names', 'sql.list_tables', 'sql.schema', 'sql.example', 'sql.check', 'sql.query']
+2025-09-20 08:13:55,045 INFO src.llm_api - [STARTUP] Chains ready; guards wired: list=True schema=True exec=True
+2025-09-20 08:14:04,695 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-20 08:14:10,826 INFO src.llm_api - [ExecuteQueryGuard] _arun called
+2025-09-20 08:14:12,980 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-20 08:14:18,269 INFO src.llm_api - [ExecuteQueryGuard] _arun called
+2025-09-20 08:14:18,269 ERROR src.llm_api - ❌ intent failed after retry: Average Sales per Person :: ERROR: execute_query requires a single string param 'sql'.
+2025-09-20 08:14:19,896 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-20 08:14:26,620 INFO src.llm_api - [ExecuteQueryGuard] _arun called
+2025-09-20 08:14:28,716 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-20 08:14:35,308 INFO src.llm_api - [ExecuteQueryGuard] _arun called
+2025-09-20 08:14:35,308 ERROR src.llm_api - ❌ intent failed after retry: Annually Sales :: ERROR: execute_query requires a single string param 'sql'.
+2025-09-20 09:22:04,319 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-20 10:19:16,527 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-20 10:48:22,392 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-20 10:48:27,677 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "The Average Sales Per Person Name", "chart_type": "piechart", "note": "the average sales per person name as a pie chart"}']
+2025-09-20 10:55:22,982 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-20 10:56:57,996 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "The Average Sales Per Person Name", "chart_type": "piechart", "note": "the average sales per person name as a pie chart"}']
+2025-09-20 10:56:58,000 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-20 10:57:09,198 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-20 10:57:14,268 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-20 10:57:17,225 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-20 10:57:21,914 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-20 10:57:28,931 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-20 10:57:35,979 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-20 10:57:43,054 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-20 10:58:04,303 ERROR src.llm_api - Agent error: An output parsing error occurred. In order to pass this error back to the agent and have it try again, pass `handle_parsing_errors=True` to the AgentExecutor. This is the error: Parsing LLM output produced both a final answer and a parse-able action:: It seems like there's an issue with the query. The result is not what we expected for average sales per person.
+
+The problem lies in the SQL query itself. The `SELECT` statement is selecting both `name` and `AVG(sales)`, but then grouping by `name`. This means that the `AVG(sales)` calculation will be performed separately for each unique `name`, resulting in a single value for each person, not an average sales amount.
+
+To fix this, we need to remove the `GROUP BY name` clause from the SQL query. Here's the corrected query:
+
+Action: sql.query
+Action Input: { "sql": "SELECT AVG(sales) AS avg_sales, name FROM sales JOIN person ON sales.person_id = person.id" }
+
+This will return a single row with two columns: `avg_sales` and `name`, where `avg_sales` is the average sales amount for each person.
+
+Final Answer:
+{
+  "results": [
+    {
+      "sql": "SELECT AVG(sales) AS avg_sales, name FROM sales JOIN person ON sales.person_id = person.id",
+      "viz": {
+        "type": "piechart",
+        "format": "table",
+        "title": "Average Sales per Person"
+      }
+    }
+  ]
+}
+For troubleshooting, visit: https://python.langchain.com/docs/troubleshooting/errors/OUTPUT_PARSING_FAILURE 
+2025-09-20 10:58:04,303 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-21 07:11:14,860 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-21 07:12:18,480 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "The Average Sales Per Person Name", "chart_type": "piechart", "note": "the average sales per person name as a pie chart"}']
+2025-09-21 07:12:18,483 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-21 07:12:35,641 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:13:11,594 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:13:51,308 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:14:34,092 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:15:07,509 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:15:49,521 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:16:32,278 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:17:15,586 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:19:01,051 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:21:01,595 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:27:48,737 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-21 07:27:53,708 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "The Average Sales Per Person Name", "chart_type": "piechart", "note": "the average sales per person name as a pie chart"}']
+2025-09-21 07:27:53,709 INFO src.llm_api - [ask_sql] Launching agent for intent: the average sales per person name as a pie chart
+2025-09-21 07:27:53,709 INFO src.llm_api - [ask_sql] Using inner tools: list=None, schema=None, exec=None
+2025-09-21 07:35:16,929 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-21 07:35:26,667 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "The Average Sales Per Person Name", "chart_type": "piechart", "note": "the average sales per person name as a pie chart"}']
+2025-09-21 07:35:26,667 INFO src.llm_api - [ask_sql] Launching agent for intent: the average sales per person name as a pie chart
+2025-09-21 07:35:26,667 INFO src.llm_api - [ask_sql] Using inner tools: list=None, schema=None, exec=None
+2025-09-21 07:35:26,671 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-21 07:35:37,576 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:35:47,404 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:36:03,249 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:36:15,008 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:36:27,662 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:36:46,107 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:36:51,485 ERROR src.llm_api - Agent error: Failed to parse FinalAnswer from completion {"error": "Table 'customers' does not exist in the database."}. Got: 1 validation error for FinalAnswer
+results
+  Field required [type=missing, input_value={'error': "Table 'custome...exist in the database."}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+For troubleshooting, visit: https://python.langchain.com/docs/troubleshooting/errors/OUTPUT_PARSING_FAILURE 
+2025-09-21 07:36:51,485 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-21 07:48:43,892 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-21 07:49:15,518 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "The Average Sales Per Person Name", "chart_type": "piechart", "note": "the average sales per person name as a pie chart"}']
+2025-09-21 07:49:15,518 INFO src.llm_api - [ask_sql] Launching agent for intent: the average sales per person name as a pie chart
+2025-09-21 07:49:15,519 INFO src.llm_api - [ask_sql] Using inner tools: list=None, schema=None, exec=None
+2025-09-21 07:49:15,523 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-21 07:49:26,247 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:49:35,868 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:49:40,094 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:49:51,124 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:50:03,807 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:50:17,449 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:50:31,099 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:50:45,967 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:50:58,569 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:51:11,395 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:51:24,271 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:51:37,186 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 07:51:46,911 ERROR src.llm_api - Agent error: Invalid json output: Agent stopped due to iteration limit or time limit.
+For troubleshooting, visit: https://python.langchain.com/docs/troubleshooting/errors/OUTPUT_PARSING_FAILURE 
+2025-09-21 07:51:46,911 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-21 08:09:23,455 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7fc77c4c2990>, schema=<src.llm_api.HttpSchema object at 0x7fc77c39e3d0>, exec=<src.llm_api.HttpExecute object at 0x7fc77c39d690>
+2025-09-21 08:09:23,455 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-21 08:09:27,030 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "The Average Sales Per Person Name", "chart_type": "piechart", "note": "the average sales per person name as a pie chart"}']
+2025-09-21 08:09:27,030 INFO src.llm_api - [ask_sql] Launching agent for intent: the average sales per person name as a pie chart
+2025-09-21 08:09:27,030 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7fc77c4c2990>, schema=<src.llm_api.HttpSchema object at 0x7fc77c39e3d0>, exec=<src.llm_api.HttpExecute object at 0x7fc77c39d690>
+2025-09-21 08:09:27,032 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-21 08:09:37,879 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 08:09:47,574 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 08:09:55,684 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 08:10:09,548 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 08:10:14,168 ERROR src.llm_api - Agent error: Failed to parse FinalAnswer from completion {"error": "Failed to execute query for average sales per person name as a pie chart. Please check network connection and try again."}. Got: 1 validation error for FinalAnswer
+results
+  Field required [type=missing, input_value={'error': 'Failed to exec...nection and try again.'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+For troubleshooting, visit: https://python.langchain.com/docs/troubleshooting/errors/OUTPUT_PARSING_FAILURE 
+2025-09-21 08:10:14,169 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-21 08:34:30,509 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7fb170878e90>, schema=<src.llm_api.HttpSchema object at 0x7fb172380c50>, exec=<src.llm_api.HttpExecute object at 0x7fb1706bc790>
+2025-09-21 08:34:30,509 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-21 08:35:30,092 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "The Average Sales Per Person Name", "chart_type": "piechart", "note": "the average sales per person name as a pie chart"}']
+2025-09-21 08:35:30,092 INFO src.llm_api - [ask_sql] Launching agent for intent: the average sales per person name as a pie chart
+2025-09-21 08:35:30,092 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7fb170878e90>, schema=<src.llm_api.HttpSchema object at 0x7fb172380c50>, exec=<src.llm_api.HttpExecute object at 0x7fb1706bc790>
+2025-09-21 08:35:30,096 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-21 08:35:40,980 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 08:35:48,435 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-21 08:35:48,436 INFO src.llm_api - [ExecuteQueryGuard] Rows=0 Preview=[{"error": "ERROR: Unknown tables ['customers']. Allowed: ['orders', 'paymenttype', 'person', 'products', 'sales']."}]
+2025-09-21 08:35:51,405 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 08:35:59,953 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 08:36:10,217 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-21 08:36:10,218 INFO src.llm_api - [ExecuteQueryGuard] Rows=0 Preview=[{"error": "ERROR: Unqualified column(s) detected: ['name']. Always table-qualify every column (e.g., sales.value, person.name)."}]
+2025-09-21 08:36:14,060 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 08:36:22,770 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-21 08:36:22,770 INFO src.llm_api - [ExecuteQueryGuard] Rows=0 Preview=[{"error": "missing FROM-clause entry for table \"sales\"\nLINE 1: SELECT person.name, AVG(sales.value) AS avg_sales FROM perso...\n                                ^\n"}]
+2025-09-21 08:36:26,301 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 08:36:38,843 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-21 08:36:38,844 INFO src.llm_api - [ExecuteQueryGuard] Rows=5 Preview=[{"name": "Alice Johnson", "count": 1}, {"name": "Bob Smith", "count": 1}, {"name": "Clara Lee", "count": 1}]
+2025-09-21 08:36:43,997 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 08:36:54,713 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 08:37:02,633 INFO src.llm_api - [ask_sql] Collected 1 raw results from agents
+2025-09-21 11:32:39,600 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7fe92ebd2690>, schema=<src.llm_api.HttpSchema object at 0x7fe92e9b7c90>, exec=<src.llm_api.HttpExecute object at 0x7fe92ecdf650>
+2025-09-21 11:32:39,600 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-21 11:34:00,919 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Sum Sales Per Products", "chart_type": "barchart", "note": "show me the sum sales per products as a bar chart"}']
+2025-09-21 11:34:00,920 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the sum sales per products as a bar chart
+2025-09-21 11:34:00,920 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7fe92ebd2690>, schema=<src.llm_api.HttpSchema object at 0x7fe92e9b7c90>, exec=<src.llm_api.HttpExecute object at 0x7fe92ecdf650>
+2025-09-21 11:34:00,922 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-21 11:34:11,855 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 11:34:58,623 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 11:35:13,445 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 11:35:41,337 INFO src.llm_api - [ask_sql] Collected 1 raw results from agents
+2025-09-21 12:24:58,605 INFO src.llm_api - [ask_sql] 1 intents extracted: ['show:me the sum sales per products as a bar chart']
+2025-09-21 12:32:16,454 INFO src.llm_api - [ask_sql] 1 intents extracted: ['show:me the sum sales per products as a bar chart']
+2025-09-21 12:32:16,461 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the sum sales per products as a bar chart
+2025-09-21 12:41:46,049 INFO src.llm_api - [ask_sql] 1 intents extracted: ['show:me the sum sales per products as a bar chart']
+2025-09-21 12:41:46,070 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the sum sales per products as a bar chart
+2025-09-21 12:41:46,070 INFO src.llm_api - [ask_sql] Using inner tools: list=None, schema=None, exec=None
+2025-09-21 12:41:46,071 ERROR src.llm_api - Agent error: `run` not supported when there is not exactly one output key. Got [].
+2025-09-21 12:41:46,071 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-21 12:50:01,912 INFO src.llm_api - [ask_sql] 1 intents extracted: ['show:me the sum sales per products as a bar chart']
+2025-09-21 12:50:01,939 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the sum sales per products as a bar chart
+2025-09-21 12:50:01,939 INFO src.llm_api - [ask_sql] Using inner tools: list=None, schema=None, exec=None
+2025-09-21 12:50:01,953 ERROR src.llm_api - Agent error: All connection attempts failed
+2025-09-21 12:50:01,953 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-21 13:10:19,977 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7f089cdf0610>, schema=<src.llm_api.HttpSchema object at 0x7f089ccc0090>, exec=<src.llm_api.HttpExecute object at 0x7f09f4026290>
+2025-09-21 13:10:19,984 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-21 13:10:26,713 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Sum Sales Per Products", "chart_type": "barchart", "note": "show me the sum sales per products as a bar chart"}']
+2025-09-21 13:10:26,714 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the sum sales per products as a bar chart
+2025-09-21 13:10:26,714 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f089cdf0610>, schema=<src.llm_api.HttpSchema object at 0x7f089ccc0090>, exec=<src.llm_api.HttpExecute object at 0x7f09f4026290>
+2025-09-21 13:10:26,718 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-21 13:10:38,112 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:11:24,967 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:11:39,840 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:12:07,740 INFO src.llm_api - [ask_sql] Collected 1 raw results from agents
+2025-09-21 13:34:14,948 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7f230f518550>, schema=<src.llm_api.HttpSchema object at 0x7f230f4b9a10>, exec=<src.llm_api.HttpExecute object at 0x7f230f6f0650>
+2025-09-21 13:34:14,948 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-21 13:34:20,476 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Sum Sales Per Products", "chart_type": "barchart", "note": "show me the sum sales per products as a bar chart"}']
+2025-09-21 13:34:20,476 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the sum sales per products as a bar chart
+2025-09-21 13:34:20,476 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f230f518550>, schema=<src.llm_api.HttpSchema object at 0x7f230f4b9a10>, exec=<src.llm_api.HttpExecute object at 0x7f230f6f0650>
+2025-09-21 13:34:20,477 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-21 13:40:43,954 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7efcd1fb0cd0>, schema=<src.llm_api.HttpSchema object at 0x7efcd20d1c10>, exec=<src.llm_api.HttpExecute object at 0x7efe2935ddd0>
+2025-09-21 13:40:43,961 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-21 13:41:03,041 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Sum Sales Per Products", "chart_type": "barchart", "note": "show me the sum sales per products as a bar chart"}']
+2025-09-21 13:41:03,041 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the sum sales per products as a bar chart
+2025-09-21 13:41:03,041 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7efcd1fb0cd0>, schema=<src.llm_api.HttpSchema object at 0x7efcd20d1c10>, exec=<src.llm_api.HttpExecute object at 0x7efe2935ddd0>
+2025-09-21 13:41:03,042 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-21 13:41:03,044 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-21 13:41:16,315 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:41:20,339 INFO httpx - HTTP Request: GET http://mcp_server:8000/tables "HTTP/1.1 200 OK"
+2025-09-21 13:41:21,908 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:41:25,833 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/sales "HTTP/1.1 200 OK"
+2025-09-21 13:41:28,502 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:41:30,884 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-21 13:41:30,884 INFO src.llm_api - [ExecuteQueryGuard] Rows=0 Preview=[{"error": "ERROR: Unqualified column(s) detected: ['product_id', 'value']. Always table-qualify every column (e.g., sales.value, person.name)."}]
+2025-09-21 13:41:32,896 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:41:41,390 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:41:51,283 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:42:01,172 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:42:11,228 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:42:21,310 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:42:31,470 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:45:59,231 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7f9ed6e9ef50>, schema=<src.llm_api.HttpSchema object at 0x7f9ed6cd11d0>, exec=<src.llm_api.HttpExecute object at 0x7f9ed6cd0e90>
+2025-09-21 13:45:59,238 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-21 13:46:03,698 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Sum Sales Per Products", "chart_type": "barchart", "note": "show me the sum sales per products as a bar chart"}']
+2025-09-21 13:46:03,699 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the sum sales per products as a bar chart
+2025-09-21 13:46:03,699 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f9ed6e9ef50>, schema=<src.llm_api.HttpSchema object at 0x7f9ed6cd11d0>, exec=<src.llm_api.HttpExecute object at 0x7f9ed6cd0e90>
+2025-09-21 13:46:03,699 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-21 13:46:03,703 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-21 13:46:03,891 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:46:07,803 INFO httpx - HTTP Request: GET http://mcp_server:8000/tables "HTTP/1.1 200 OK"
+2025-09-21 13:46:09,448 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:46:13,381 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/sales "HTTP/1.1 200 OK"
+2025-09-21 13:46:14,917 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:46:23,481 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:46:31,971 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:46:44,052 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:46:48,773 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-21 13:46:48,773 INFO src.llm_api - [ExecuteQueryGuard] Rows=1 Preview=[{"id": 1, "person_id": 1, "product_id": 1, "sale_date": "2024-03-01", "value": 999.99, "payment_id": 1, "order_id": 1}]
+2025-09-21 13:46:52,217 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:47:00,698 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:47:09,247 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:47:17,863 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:47:26,470 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:47:35,145 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 13:47:40,567 ERROR src.llm_api - Agent error: Got invalid JSON object. Error: Expecting value: line 1 column 1 (char 0)
+For troubleshooting, visit: https://python.langchain.com/docs/troubleshooting/errors/OUTPUT_PARSING_FAILURE 
+2025-09-21 13:47:40,567 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-21 16:20:30,679 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7f1a492bab50>, schema=<src.llm_api.HttpSchema object at 0x7f1a490b8d50>, exec=<src.llm_api.HttpExecute object at 0x7f1a490b9450>
+2025-09-21 16:20:30,679 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-21 16:21:00,814 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Sum Sales Per Products", "chart_type": "barchart", "note": "show me the sum sales per products as a bar chart"}']
+2025-09-21 16:21:00,815 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the sum sales per products as a bar chart
+2025-09-21 16:21:00,815 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f1a492bab50>, schema=<src.llm_api.HttpSchema object at 0x7f1a490b8d50>, exec=<src.llm_api.HttpExecute object at 0x7f1a490b9450>
+2025-09-21 16:21:00,815 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-21 16:21:00,819 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-21 16:21:14,124 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:21:18,176 INFO httpx - HTTP Request: GET http://mcp_server:8000/tables "HTTP/1.1 200 OK"
+2025-09-21 16:21:19,735 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:21:23,689 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/sales "HTTP/1.1 200 OK"
+2025-09-21 16:21:26,343 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:21:28,735 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-21 16:21:28,736 INFO src.llm_api - [ExecuteQueryGuard] Rows=0 Preview=[{"error": "ERROR: Unqualified column(s) detected: ['product_id', 'value']. Always table-qualify every column (e.g., sales.value, person.name)."}]
+2025-09-21 16:21:30,778 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:21:39,154 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:21:48,982 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:21:58,842 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:22:08,836 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:22:18,939 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:22:29,107 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:22:39,323 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:22:49,542 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:22:56,172 ERROR src.llm_api - Agent error: Got invalid JSON object. Error: Expecting value: line 1 column 1 (char 0)
+For troubleshooting, visit: https://python.langchain.com/docs/troubleshooting/errors/OUTPUT_PARSING_FAILURE 
+2025-09-21 16:22:56,172 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-21 16:24:58,344 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Sum Sales Per Products", "chart_type": "barchart", "note": "show me the sum sales per products as a bar chart"}']
+2025-09-21 16:24:58,345 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the sum sales per products as a bar chart
+2025-09-21 16:24:58,345 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f1a492bab50>, schema=<src.llm_api.HttpSchema object at 0x7f1a490b8d50>, exec=<src.llm_api.HttpExecute object at 0x7f1a490b9450>
+2025-09-21 16:24:58,345 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-21 16:24:58,346 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-21 16:24:58,542 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:25:02,540 INFO httpx - HTTP Request: GET http://mcp_server:8000/tables "HTTP/1.1 200 OK"
+2025-09-21 16:25:04,093 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:25:08,048 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/sales "HTTP/1.1 200 OK"
+2025-09-21 16:25:09,482 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:25:18,006 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:25:26,606 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:25:38,704 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:25:43,452 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-21 16:25:43,452 INFO src.llm_api - [ExecuteQueryGuard] Rows=1 Preview=[{"id": 1, "person_id": 1, "product_id": 1, "sale_date": "2024-03-01", "value": 999.99, "payment_id": 1, "order_id": 1}]
+2025-09-21 16:25:46,898 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:25:55,436 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:26:04,062 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:26:12,639 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:26:21,316 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:26:30,113 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:26:35,639 ERROR src.llm_api - Agent error: Got invalid JSON object. Error: Expecting value: line 1 column 1 (char 0)
+For troubleshooting, visit: https://python.langchain.com/docs/troubleshooting/errors/OUTPUT_PARSING_FAILURE 
+2025-09-21 16:26:35,639 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-21 16:47:35,607 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7fb8cbef7950>, schema=<src.llm_api.HttpSchema object at 0x7fb8cbf10190>, exec=<src.llm_api.HttpExecute object at 0x7fb774a94fd0>
+2025-09-21 16:47:35,607 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-21 16:47:41,736 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Sum Sales Per Products", "chart_type": "barchart", "note": "show me the sum sales per products as a bar chart"}']
+2025-09-21 16:47:41,736 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the sum sales per products as a bar chart
+2025-09-21 16:47:41,737 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7fb8cbef7950>, schema=<src.llm_api.HttpSchema object at 0x7fb8cbf10190>, exec=<src.llm_api.HttpExecute object at 0x7fb774a94fd0>
+2025-09-21 16:47:41,737 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-21 16:53:18,532 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7f0477ca8c50>, schema=<src.llm_api.HttpSchema object at 0x7f0477dcccd0>, exec=<src.llm_api.HttpExecute object at 0x7f05cf12c0d0>
+2025-09-21 16:53:18,532 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-21 16:53:25,731 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Sum Sales Per Products", "chart_type": "barchart", "note": "show me the sum sales per products as a bar chart"}']
+2025-09-21 16:53:25,731 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the sum sales per products as a bar chart
+2025-09-21 16:53:25,731 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f0477ca8c50>, schema=<src.llm_api.HttpSchema object at 0x7f0477dcccd0>, exec=<src.llm_api.HttpExecute object at 0x7f05cf12c0d0>
+2025-09-21 16:53:25,732 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-21 16:53:25,735 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-21 16:53:58,344 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:54:03,708 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/sales "HTTP/1.1 200 OK"
+2025-09-21 16:54:06,873 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:54:11,599 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-21 16:54:11,599 INFO src.llm_api - [ExecuteQueryGuard] Rows=0 Preview=[{"error": "ERROR: Unqualified column(s) detected: ['product_id', 'value']. Always table-qualify every column (e.g., sales.value, person.name)."}]
+2025-09-21 16:54:14,267 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:54:33,059 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:54:43,458 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:54:54,015 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:55:04,672 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:55:15,344 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:55:26,145 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:55:37,036 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:55:47,972 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:55:58,969 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 16:56:06,032 ERROR src.llm_api - Could not parse JSON from agent output: Agent stopped due to iteration limit or time limit.
+2025-09-21 16:56:06,032 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-21 17:42:43,990 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7f7d8e899250>, schema=<src.llm_api.HttpSchema object at 0x7f7d91cd3190>, exec=<src.llm_api.HttpExecute object at 0x7f7ee5a90150>
+2025-09-21 17:42:43,990 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-21 17:42:49,452 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Sum Sales Per Products", "chart_type": "barchart", "note": "show me the sum sales per products as a bar chart"}']
+2025-09-21 17:42:49,452 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the sum sales per products as a bar chart
+2025-09-21 17:42:49,452 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f7d8e899250>, schema=<src.llm_api.HttpSchema object at 0x7f7d91cd3190>, exec=<src.llm_api.HttpExecute object at 0x7f7ee5a90150>
+2025-09-21 17:42:49,453 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-21 17:42:49,456 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-21 17:43:23,929 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 17:43:29,012 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/sales "HTTP/1.1 200 OK"
+2025-09-21 17:43:32,223 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 17:43:41,351 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-21 17:43:41,351 INFO src.llm_api - [ExecuteQueryGuard] Rows=0 Preview=[{"error": "ERROR: Unqualified column(s) detected: ['product_id', 'value']. Always table-qualify every column (e.g., sales.value, person.name)."}]
+2025-09-21 17:43:45,173 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 17:43:52,618 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/products "HTTP/1.1 200 OK"
+2025-09-21 17:43:55,524 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 17:44:04,818 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 17:44:17,841 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-21 17:44:17,841 INFO src.llm_api - [ExecuteQueryGuard] Rows=5 Preview=[{"product": "Smartphone", "total_sales": 1399.0}, {"product": "Blender", "total_sales": 89.99}, {"product": "E-reader", "total_sales": 259.98}]
+2025-09-21 17:44:23,796 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-21 17:44:32,170 INFO src.llm_api - [ask_sql] Collected 1 raw results from agents
+2025-09-22 14:45:45,179 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7fa107772790>, schema=<src.llm_api.HttpSchema object at 0x7f9fb03bdcd0>, exec=<src.llm_api.HttpExecute object at 0x7f9fb04dd110>
+2025-09-22 14:45:45,179 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-22 14:45:52,155 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Sum Sales Per Products", "chart_type": "barchart", "note": "show me the sum sales per products as a bar chart"}']
+2025-09-22 14:45:52,155 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the sum sales per products as a bar chart
+2025-09-22 14:45:52,156 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7fa107772790>, schema=<src.llm_api.HttpSchema object at 0x7f9fb03bdcd0>, exec=<src.llm_api.HttpExecute object at 0x7f9fb04dd110>
+2025-09-22 14:45:52,156 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 14:45:52,160 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-22 14:46:26,870 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:46:31,948 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/sales "HTTP/1.1 200 OK"
+2025-09-22 14:46:35,064 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:46:44,292 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 14:46:44,292 INFO src.llm_api - [ExecuteQueryGuard] Rows=0 Preview=[{"error": "ERROR: Unqualified column(s) detected: ['product_id', 'value']. Always table-qualify every column (e.g., sales.value, person.name)."}]
+2025-09-22 14:46:48,093 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:46:55,488 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/products "HTTP/1.1 200 OK"
+2025-09-22 14:46:58,384 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:47:07,638 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:47:20,746 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 14:47:20,746 INFO src.llm_api - [ExecuteQueryGuard] Rows=5 Preview=[{"product": "Smartphone", "total_sales": 1399.0}, {"product": "Blender", "total_sales": 89.99}, {"product": "E-reader", "total_sales": 259.98}]
+2025-09-22 14:47:26,697 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:47:35,000 INFO src.llm_api - [ask_sql] Collected 1 raw results from agents
+2025-09-22 14:47:35,000 INFO src.llm_api - [/ASK] Deduped final results: [{'sql': 'SELECT p.name::text AS product, SUM(s.value) AS total_sales FROM sales s JOIN products p ON s.product_id = p.id GROUP BY p.name', 'viz': {'type': 'barchart', 'format': 'table', 'title': 'Sum Sales per Product'}}]
+2025-09-22 14:47:35,000 INFO src.llm_api - [/ASK] Final SQL preview: SELECT p.name::text AS product, SUM(s.value) AS total_sales FROM sales s JOIN products p ON s.product_id = p.id GROUP BY p.name
+2025-09-22 14:47:35,000 INFO src.llm_api - [/ASK] Generating dashboard with title: Sum Sales per Product — 2025-09-22 14:45:52
+2025-09-22 14:48:32,683 INFO src.llm_api - [/ASK] Dashboard validation result: ok=True, err=
+2025-09-22 14:48:32,683 INFO src.llm_api - [/ASK] Posting dashboard to Grafana MCP endpoint.
+2025-09-22 14:48:32,794 INFO src.llm_api - [/ASK] Grafana MCP response: {'folderUid': 'eeyd4elgdknb4e', 'id': 17, 'slug': '5cefeec', 'status': 'success', 'uid': '562c68c9-b3a3-4b3f-97f2-95e6dc51a856', 'url': '/d/562c68c9-b3a3-4b3f-97f2-95e6dc51a856/5cefeec', 'version': 1}
+2025-09-22 14:48:32,795 INFO src.llm_api - [/ASK] Dashboard created successfully.
+2025-09-22 14:50:15,112 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Average Sales Per Person Name", "chart_type": "piechart", "note": "show me the average sales per person name as a pie chart"}']
+2025-09-22 14:50:15,112 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the average sales per person name as a pie chart
+2025-09-22 14:50:15,113 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7fa107772790>, schema=<src.llm_api.HttpSchema object at 0x7f9fb03bdcd0>, exec=<src.llm_api.HttpExecute object at 0x7f9fb04dd110>
+2025-09-22 14:50:15,113 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 14:50:15,114 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-22 14:50:50,038 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:50:57,796 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 14:50:57,796 INFO src.llm_api - [ExecuteQueryGuard] Rows=3 Preview=[{"name": "Alice Johnson", "avg_sales": 352.4925}, {"name": "Bob Smith", "avg_sales": 496.33}, {"name": "Eva White", "avg_sales": 150.0}]
+2025-09-22 14:51:01,607 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:51:11,069 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:51:20,576 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:51:30,778 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:51:40,483 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:51:50,800 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:52:03,869 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:52:13,869 ERROR src.llm_api - Could not parse JSON from agent output: Agent stopped due to iteration limit or time limit.
+2025-09-22 14:52:13,869 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-22 14:52:13,869 INFO src.llm_api - [/ASK] Deduped final results: []
+2025-09-22 14:52:13,869 INFO src.llm_api - [/ASK] Final SQL preview: 
+2025-09-22 14:52:13,869 INFO src.llm_api - [/ASK] Generating dashboard with title:  — 2025-09-22 14:50:15
+2025-09-22 14:53:17,224 INFO src.llm_api - [/ASK] Dashboard validation result: ok=True, err=
+2025-09-22 14:53:17,224 INFO src.llm_api - [/ASK] Posting dashboard to Grafana MCP endpoint.
+2025-09-22 14:53:17,274 INFO src.llm_api - [/ASK] Grafana MCP response: {'folderUid': 'eeyd4elgdknb4e', 'id': 18, 'slug': 'e28094-2025-09-22-143a-503a-15', 'status': 'success', 'uid': '48fa2eb0-f1ae-4a05-a8ea-8abf1c7dc987', 'url': '/d/48fa2eb0-f1ae-4a05-a8ea-8abf1c7dc987/e28094-2025-09-22-143a-503a-15', 'version': 1}
+2025-09-22 14:53:17,275 INFO src.llm_api - [/ASK] Dashboard created successfully.
+2025-09-22 14:54:23,413 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Average Sales Per Person Name", "chart_type": "piechart", "note": "show me the average sales per person name as a pie chart"}']
+2025-09-22 14:54:23,414 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the average sales per person name as a pie chart
+2025-09-22 14:54:23,414 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7fa107772790>, schema=<src.llm_api.HttpSchema object at 0x7f9fb03bdcd0>, exec=<src.llm_api.HttpExecute object at 0x7f9fb04dd110>
+2025-09-22 14:54:23,414 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 14:54:23,415 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-22 14:54:58,065 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:55:05,830 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 14:55:05,830 INFO src.llm_api - [ExecuteQueryGuard] Rows=3 Preview=[{"name": "Alice Johnson", "avg_sales": 352.4925}, {"name": "Bob Smith", "avg_sales": 496.33}, {"name": "Eva White", "avg_sales": 150.0}]
+2025-09-22 14:55:09,637 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:55:19,113 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:55:28,677 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:55:38,937 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:55:48,591 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:55:58,917 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:56:12,086 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:56:22,129 ERROR src.llm_api - Could not parse JSON from agent output: Agent stopped due to iteration limit or time limit.
+2025-09-22 14:56:22,129 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-22 14:56:22,129 INFO src.llm_api - [/ASK] Deduped final results: []
+2025-09-22 14:56:22,129 INFO src.llm_api - [/ASK] Final SQL preview: 
+2025-09-22 14:56:22,129 INFO src.llm_api - [/ASK] Generating dashboard with title:  — 2025-09-22 14:54:23
+2025-09-22 14:57:40,655 INFO src.llm_api - [/ASK] Dashboard validation result: ok=True, err=
+2025-09-22 14:57:40,655 INFO src.llm_api - [/ASK] Posting dashboard to Grafana MCP endpoint.
+2025-09-22 14:57:40,719 INFO src.llm_api - [/ASK] Grafana MCP response: {'folderUid': 'eeyd4elgdknb4e', 'id': 19, 'slug': 'e28094-2025-09-22-143a-543a-23', 'status': 'success', 'uid': '581844f1-b727-4bf7-afcb-2cd3bb4d5893', 'url': '/d/581844f1-b727-4bf7-afcb-2cd3bb4d5893/e28094-2025-09-22-143a-543a-23', 'version': 1}
+2025-09-22 14:57:40,720 INFO src.llm_api - [/ASK] Dashboard created successfully.
+2025-09-22 14:58:36,420 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7f8d9a8a3810>, schema=<src.llm_api.HttpSchema object at 0x7f8d9c30aa10>, exec=<src.llm_api.HttpExecute object at 0x7f8ef1be2d10>
+2025-09-22 14:58:36,420 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-22 14:58:40,011 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Average Sales Per Person Name", "chart_type": "piechart", "note": "show me the average sales per person name as a pie chart"}']
+2025-09-22 14:58:40,012 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the average sales per person name as a pie chart
+2025-09-22 14:58:40,012 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f8d9a8a3810>, schema=<src.llm_api.HttpSchema object at 0x7f8d9c30aa10>, exec=<src.llm_api.HttpExecute object at 0x7f8ef1be2d10>
+2025-09-22 14:58:40,012 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 14:58:40,016 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-22 14:59:14,968 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:59:22,849 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 14:59:22,850 INFO src.llm_api - [ExecuteQueryGuard] Rows=3 Preview=[{"name": "Alice Johnson", "avg_sales": 352.4925}, {"name": "Bob Smith", "avg_sales": 496.33}, {"name": "Eva White", "avg_sales": 150.0}]
+2025-09-22 14:59:26,679 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:59:36,087 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:59:45,539 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 14:59:55,700 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:00:05,250 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:00:15,520 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:00:28,556 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:00:38,481 ERROR src.llm_api - Could not parse JSON from agent output: Agent stopped due to iteration limit or time limit.
+2025-09-22 15:00:38,482 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-22 15:00:38,482 INFO src.llm_api - [/ASK] Deduped final results: []
+2025-09-22 15:00:38,482 INFO src.llm_api - [/ASK] Final SQL preview: 
+2025-09-22 15:00:38,482 INFO src.llm_api - [/ASK] Generating dashboard with title:  — 2025-09-22 14:58:40
+2025-09-22 15:01:57,376 INFO src.llm_api - [/ASK] Dashboard validation result: ok=True, err=
+2025-09-22 15:01:57,377 INFO src.llm_api - [/ASK] Posting dashboard to Grafana MCP endpoint.
+2025-09-22 15:01:57,463 INFO src.llm_api - [/ASK] Grafana MCP response: {'folderUid': 'eeyd4elgdknb4e', 'id': 20, 'slug': 'e28094-2025-09-22-143a-583a-40', 'status': 'success', 'uid': '4b00d384-18da-4971-b13c-85fb60d6c8c6', 'url': '/d/4b00d384-18da-4971-b13c-85fb60d6c8c6/e28094-2025-09-22-143a-583a-40', 'version': 1}
+2025-09-22 15:01:57,464 INFO src.llm_api - [/ASK] Dashboard created successfully.
+2025-09-22 15:16:47,164 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7f59c2468150>, schema=<src.llm_api.HttpSchema object at 0x7f586afd37d0>, exec=<src.llm_api.HttpExecute object at 0x7f586b1101d0>
+2025-09-22 15:16:47,164 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-22 15:16:59,395 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Average Sales Per Person Name", "chart_type": "piechart", "note": "show me the average sales per person name as a pie chart"}']
+2025-09-22 15:16:59,395 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the average sales per person name as a pie chart
+2025-09-22 15:16:59,395 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f59c2468150>, schema=<src.llm_api.HttpSchema object at 0x7f586afd37d0>, exec=<src.llm_api.HttpExecute object at 0x7f586b1101d0>
+2025-09-22 15:16:59,395 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 15:16:59,399 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-22 15:17:33,931 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:17:41,945 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 15:17:41,947 INFO src.llm_api - [ExecuteQueryGuard] Rows=3 Preview=[{"name": "Alice Johnson", "avg_sales": 352.4925}, {"name": "Bob Smith", "avg_sales": 496.33}, {"name": "Eva White", "avg_sales": 150.0}]
+2025-09-22 15:17:45,761 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:17:55,280 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:18:04,849 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:18:15,091 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:18:24,789 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:18:35,170 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:18:48,358 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:18:58,464 ERROR src.llm_api - Could not parse JSON from agent output: Agent stopped due to iteration limit or time limit.
+2025-09-22 15:18:58,465 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-22 15:18:58,465 INFO src.llm_api - [/ASK] Deduped final results: []
+2025-09-22 15:18:58,465 INFO src.llm_api - [/ASK] Final SQL preview: 
+2025-09-22 15:18:58,465 INFO src.llm_api - [/ASK] Generating dashboard with title:  — 2025-09-22 15:16:59
+2025-09-22 15:20:10,051 INFO src.llm_api - [/ASK] Dashboard validation result: ok=True, err=
+2025-09-22 15:20:10,051 INFO src.llm_api - [/ASK] Posting dashboard to Grafana MCP endpoint.
+2025-09-22 15:20:10,137 INFO src.llm_api - [/ASK] Grafana MCP response: {'folderUid': 'eeyd4elgdknb4e', 'id': 21, 'slug': 'e28094-2025-09-22-153a-163a-59', 'status': 'success', 'uid': '033ce070-789b-4700-9696-c36ff99016c4', 'url': '/d/033ce070-789b-4700-9696-c36ff99016c4/e28094-2025-09-22-153a-163a-59', 'version': 1}
+2025-09-22 15:20:10,138 INFO src.llm_api - [/ASK] Dashboard created successfully.
+2025-09-22 15:24:05,844 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7f5487ad7410>, schema=<src.llm_api.HttpSchema object at 0x7f5487c8a950>, exec=<src.llm_api.HttpExecute object at 0x7f5487cca550>
+2025-09-22 15:24:05,844 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-22 15:24:23,759 ERROR src.llm_api - [intents/ollama] Parse error before validation: '"intents"'
+2025-09-22 15:24:23,761 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Average Sales Per Person Name", "chart_type": "piechart", "note": "show me the average sales per person name as a pie chart"}']
+2025-09-22 15:24:23,761 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the average sales per person name as a pie chart
+2025-09-22 15:24:23,762 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f5487ad7410>, schema=<src.llm_api.HttpSchema object at 0x7f5487c8a950>, exec=<src.llm_api.HttpExecute object at 0x7f5487cca550>
+2025-09-22 15:24:23,762 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 15:24:23,765 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-22 15:24:59,157 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:25:07,080 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 15:25:07,080 INFO src.llm_api - [ExecuteQueryGuard] Rows=3 Preview=[{"name": "Alice Johnson", "avg_sales": 352.4925}, {"name": "Bob Smith", "avg_sales": 496.33}, {"name": "Eva White", "avg_sales": 150.0}]
+2025-09-22 15:25:10,884 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:25:20,459 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:25:30,092 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:25:40,415 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:25:50,127 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:26:00,591 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:26:13,681 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:26:23,809 ERROR src.llm_api - Could not parse JSON from agent output: Agent stopped due to iteration limit or time limit.
+2025-09-22 15:26:23,809 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-22 15:26:23,809 INFO src.llm_api - [/ASK] Deduped final results: []
+2025-09-22 15:26:23,809 INFO src.llm_api - [/ASK] Final SQL preview: 
+2025-09-22 15:26:23,809 INFO src.llm_api - [/ASK] Generating dashboard with title:  — 2025-09-22 15:24:23
+2025-09-22 15:27:42,980 INFO src.llm_api - [/ASK] Dashboard validation result: ok=True, err=
+2025-09-22 15:27:42,980 INFO src.llm_api - [/ASK] Posting dashboard to Grafana MCP endpoint.
+2025-09-22 15:27:43,039 INFO src.llm_api - [/ASK] Grafana MCP response: {'folderUid': 'eeyd4elgdknb4e', 'id': 22, 'slug': 'e28094-2025-09-22-153a-243a-23', 'status': 'success', 'uid': '15e0d2f4-e5aa-48dd-87e6-03ee48952fb5', 'url': '/d/15e0d2f4-e5aa-48dd-87e6-03ee48952fb5/e28094-2025-09-22-153a-243a-23', 'version': 1}
+2025-09-22 15:27:43,040 INFO src.llm_api - [/ASK] Dashboard created successfully.
+2025-09-22 15:38:42,888 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7fc68d7a9f50>, schema=<src.llm_api.HttpSchema object at 0x7fc68d7aa2d0>, exec=<src.llm_api.HttpExecute object at 0x7fc68d7a9650>
+2025-09-22 15:38:42,895 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-22 15:38:51,071 ERROR src.llm_api - [intents/ollama] Parse error before validation: '"intents"'
+2025-09-22 15:38:51,074 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "Show Me The Average Sales Per Person Name", "chart_type": "piechart", "note": "show me the average sales per person name as a pie chart"}']
+2025-09-22 15:38:51,074 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the average sales per person name as a pie chart
+2025-09-22 15:38:51,074 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7fc68d7a9f50>, schema=<src.llm_api.HttpSchema object at 0x7fc68d7aa2d0>, exec=<src.llm_api.HttpExecute object at 0x7fc68d7a9650>
+2025-09-22 15:38:51,074 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 15:38:51,078 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-22 15:39:25,962 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:39:33,828 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 15:39:33,829 INFO src.llm_api - [ExecuteQueryGuard] Rows=3 Preview=[{"name": "Alice Johnson", "avg_sales": 352.4925}, {"name": "Bob Smith", "avg_sales": 496.33}, {"name": "Eva White", "avg_sales": 150.0}]
+2025-09-22 15:39:37,657 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:39:47,205 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:39:56,750 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:45:31,811 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7f37a582bb10>, schema=<src.llm_api.HttpSchema object at 0x7f37a58e57d0>, exec=<src.llm_api.HttpExecute object at 0x7f37a58e5410>
+2025-09-22 15:45:31,812 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-22 15:45:35,723 INFO src.llm_api - [ollama] Sending payload: {"model": "llama3.1:8b", "messages": [{"role": "system", "content": "You split one analytics request into multiple chart intents.\nReturn ONLY a single JSON object with EXACTLY this shape and key names:\n{{\"intents\":[{{\"title\":\"...\", \"chart_type\":\"barchart|piechart|line|table|stat|gauge\", \"note\":\"...\"}}]}}\nNo prose. No code fences. No extra keys."}, {"role": "user", "content": "Prompt:\nshow me the average sales per person name as a pie chart and the annually sales as a bar chart.\n\nRespond exactly as:\n{\"intents\":[{\"title\":\"...\", \"chart_type\":\"...\", \"note\":\"...\"}, ...]}"}], "format": "json", "options": {"temperature": 0.0, "top_p": 1.0, "num_ctx": 8192}, "stream": false}
+2025-09-22 15:45:44,700 INFO src.llm_api - [ollama] Raw response: {"model": "llama3.1:8b", "created_at": "2025-09-22T15:45:44.7003555Z", "message": {"role": "assistant", "content": "{\"intents\":[{\"title\":\"Average Sales by Person Name\", \"chart_type\":\"piechart\", \"note\":\"Show average sales per person name\"}, {\"title\":\"Annually Sales\", \"chart_type\":\"barchart\", \"note\":\"Display annually sales\"}]}"}, "done_reason": "stop", "done": true, "total_duration": 8972926256, "load_duration": 2534428214, "prompt_eval_count": 135, "prompt_eval_duration": 2458120726, "eval_count": 53, "eval_duration": 3977850555}
+2025-09-22 15:45:44,701 INFO src.llm_api - [ollama_json] Extracted JSON: {"intents":[{"title":"Average Sales by Person Name", "chart_type":"piechart", "note":"Show average sales per person name"}, {"title":"Annually Sales", "chart_type":"barchart", "note":"Display annually sales"}]}
+2025-09-22 15:45:44,701 INFO src.llm_api - [llm_extract_intents_ollama_http] input prompt: show me the average sales per person name as a pie chart and the annually sales as a bar chart. Raw LLM output: {"intents": [{"title": "Average Sales by Person Name", "chart_type": "piechart", "note": "Show average sales per person name"}, {"title": "Annually Sales", "chart_type": "barchart", "note": "Display annually sales"}]}
+2025-09-22 15:45:44,701 INFO src.llm_api - [ask_sql] 2 intents extracted: ['{"title": "Average Sales by Person Name", "chart_type": "piechart", "note": "Show average sales per person name"}', '{"title": "Annually Sales", "chart_type": "barchart", "note": "Display annually sales"}']
+2025-09-22 15:45:44,701 INFO src.llm_api - [ask_sql] Launching agent for intent: Show average sales per person name
+2025-09-22 15:45:44,701 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f37a582bb10>, schema=<src.llm_api.HttpSchema object at 0x7f37a58e57d0>, exec=<src.llm_api.HttpExecute object at 0x7f37a58e5410>
+2025-09-22 15:45:44,701 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 15:45:44,702 INFO src.llm_api - [ask_sql] Launching agent for intent: Display annually sales
+2025-09-22 15:45:44,702 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f37a582bb10>, schema=<src.llm_api.HttpSchema object at 0x7f37a58e57d0>, exec=<src.llm_api.HttpExecute object at 0x7f37a58e5410>
+2025-09-22 15:45:44,702 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 15:45:44,702 INFO src.llm_api - [ask_sql] Launched 2 agents concurrently
+2025-09-22 15:46:40,987 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:46:55,847 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:47:04,313 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 15:47:04,314 INFO src.llm_api - [ExecuteQueryGuard] Rows=2 Preview=[{"year": "2025-01-01T00:00:00+00:00", "total": 979.49}, {"year": "2024-01-01T00:00:00+00:00", "total": 2069.47}]
+2025-09-22 15:47:08,641 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:47:09,191 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 15:47:09,192 INFO src.llm_api - [ExecuteQueryGuard] Rows=3 Preview=[{"person": "Alice Johnson", "avg_sales": 352.4925}, {"person": "Bob Smith", "avg_sales": 496.33}, {"person": "Eva White", "avg_sales": 150.0}]
+2025-09-22 15:47:13,436 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:47:22,386 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:47:25,987 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:47:35,209 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:47:39,487 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:47:48,363 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:47:53,254 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:48:01,422 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:48:06,966 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:48:14,810 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:48:20,964 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:48:28,141 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:48:34,925 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 15:48:43,087 ERROR src.llm_api - Could not parse JSON from agent output: Agent stopped due to iteration limit or time limit.
+2025-09-22 15:48:43,087 ERROR src.llm_api - Could not parse JSON from agent output: Agent stopped due to iteration limit or time limit.
+2025-09-22 15:48:43,087 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-22 15:48:43,087 INFO src.llm_api - [/ASK] Deduped final results: []
+2025-09-22 15:48:43,087 INFO src.llm_api - [/ASK] Final SQL preview: 
+2025-09-22 15:48:43,087 ERROR src.llm_api - No valid SQL generated; skipping dashboard creation.
+2025-09-22 16:00:47,304 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7f596e9f77d0>, schema=<src.llm_api.HttpSchema object at 0x7f596e7d1850>, exec=<src.llm_api.HttpExecute object at 0x7f596e8d3f90>
+2025-09-22 16:00:47,304 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-22 16:01:02,866 INFO src.llm_api - [ollama_json] Extracted JSON: {"intents":[{"title":"Average Sales by Person Name", "chart_type":"piechart", "note":"Show average sales per person name"}, {"title":"Annually Sales", "chart_type":"barchart", "note":"Display annually sales"}]}
+2025-09-22 16:01:02,867 INFO src.llm_api - [llm_extract_intents_ollama_http] input prompt: show me the average sales per person name as a pie chart and the annually sales as a bar chart. Raw LLM output: {"intents": [{"title": "Average Sales by Person Name", "chart_type": "piechart", "note": "Show average sales per person name"}, {"title": "Annually Sales", "chart_type": "barchart", "note": "Display annually sales"}]}
+2025-09-22 16:01:02,867 INFO src.llm_api - [ask_sql] 2 intents extracted: ['{"title": "Average Sales by Person Name", "chart_type": "piechart", "note": "Show average sales per person name"}', '{"title": "Annually Sales", "chart_type": "barchart", "note": "Display annually sales"}']
+2025-09-22 16:01:02,867 INFO src.llm_api - [ask_sql] Launching agent for intent: Show average sales per person name
+2025-09-22 16:01:02,867 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f596e9f77d0>, schema=<src.llm_api.HttpSchema object at 0x7f596e7d1850>, exec=<src.llm_api.HttpExecute object at 0x7f596e8d3f90>
+2025-09-22 16:01:02,867 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:01:02,868 INFO src.llm_api - [ask_sql] Launching agent for intent: Display annually sales
+2025-09-22 16:01:02,868 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f596e9f77d0>, schema=<src.llm_api.HttpSchema object at 0x7f596e7d1850>, exec=<src.llm_api.HttpExecute object at 0x7f596e8d3f90>
+2025-09-22 16:01:02,868 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:01:02,868 INFO src.llm_api - [ask_sql] Launched 2 agents concurrently
+2025-09-22 16:01:59,283 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:02:14,128 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:02:22,441 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:02:22,442 INFO src.llm_api - [ExecuteQueryGuard] Rows=2 Preview=[{"year": "2025-01-01T00:00:00+00:00", "total": 979.49}, {"year": "2024-01-01T00:00:00+00:00", "total": 2069.47}]
+2025-09-22 16:02:26,669 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:02:27,327 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:02:27,328 INFO src.llm_api - [ExecuteQueryGuard] Rows=3 Preview=[{"person": "Alice Johnson", "avg_sales": 352.4925}, {"person": "Bob Smith", "avg_sales": 496.33}, {"person": "Eva White", "avg_sales": 150.0}]
+2025-09-22 16:02:31,588 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:02:40,374 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:02:44,045 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:02:52,222 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:02:57,230 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:03:05,343 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:03:11,056 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:03:18,399 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:03:24,659 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:03:31,737 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:03:38,721 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:03:45,317 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:03:52,871 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:04:00,848 ERROR src.llm_api - Could not parse JSON from agent output: Agent stopped due to iteration limit or time limit.
+2025-09-22 16:04:00,848 ERROR src.llm_api - Could not parse JSON from agent output: Agent stopped due to iteration limit or time limit.
+2025-09-22 16:04:00,848 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-22 16:04:00,848 INFO src.llm_api - [/ASK] Deduped final results: []
+2025-09-22 16:04:00,848 INFO src.llm_api - [/ASK] Final SQL preview: 
+2025-09-22 16:04:00,848 ERROR src.llm_api - No valid SQL generated; skipping dashboard creation.
+2025-09-22 16:19:26,459 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7f55b2b4e3d0>, schema=<src.llm_api.HttpSchema object at 0x7f55b2ad9490>, exec=<src.llm_api.HttpExecute object at 0x7f55b2ad9a50>
+2025-09-22 16:19:26,459 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-22 16:19:39,780 INFO src.llm_api - [ollama_json] Extracted JSON: {"intents":[{"title":"Average Sales by Person Name", "chart_type":"piechart", "note":"Show average sales per person name"}, {"title":"Annually Sales", "chart_type":"barchart", "note":"Display annually sales"}]}
+2025-09-22 16:19:39,787 INFO src.llm_api - [llm_extract_intents_ollama_http] input prompt: show me the average sales per person name as a pie chart and the annually sales as a bar chart. Raw LLM output: {"intents": [{"title": "Average Sales by Person Name", "chart_type": "piechart", "note": "Show average sales per person name"}, {"title": "Annually Sales", "chart_type": "barchart", "note": "Display annually sales"}]}
+2025-09-22 16:19:39,787 INFO src.llm_api - [ask_sql] 2 intents extracted: ['{"title": "Average Sales by Person Name", "chart_type": "piechart", "note": "Show average sales per person name"}', '{"title": "Annually Sales", "chart_type": "barchart", "note": "Display annually sales"}']
+2025-09-22 16:19:39,787 INFO src.llm_api - [ask_sql] Launching agent for intent: Show average sales per person name
+2025-09-22 16:19:39,787 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f55b2b4e3d0>, schema=<src.llm_api.HttpSchema object at 0x7f55b2ad9490>, exec=<src.llm_api.HttpExecute object at 0x7f55b2ad9a50>
+2025-09-22 16:19:39,787 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:19:39,788 INFO src.llm_api - [ask_sql] Launching agent for intent: Display annually sales
+2025-09-22 16:19:39,788 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f55b2b4e3d0>, schema=<src.llm_api.HttpSchema object at 0x7f55b2ad9490>, exec=<src.llm_api.HttpExecute object at 0x7f55b2ad9a50>
+2025-09-22 16:19:39,788 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:19:39,788 INFO src.llm_api - [ask_sql] Launched 2 agents concurrently
+2025-09-22 16:19:39,797 ERROR src.llm_api - Agent error: 'Input to ChatPromptTemplate is missing variables {\'"results"\'}.  Expected: [\'"results"\', \'agent_scratchpad\', \'input\'] Received: [\'input\', \'tools\', \'tool_names\', \'format_instructions\', \'intermediate_steps\', \'agent_scratchpad\']\nNote: if you intended {"results"} to be part of the string and not a variable, please escape it with double curly braces like: \'{{"results"}}\'.\nFor troubleshooting, visit: https://python.langchain.com/docs/troubleshooting/errors/INVALID_PROMPT_INPUT '
+2025-09-22 16:19:39,797 ERROR src.llm_api - Agent error: 'Input to ChatPromptTemplate is missing variables {\'"results"\'}.  Expected: [\'"results"\', \'agent_scratchpad\', \'input\'] Received: [\'input\', \'tools\', \'tool_names\', \'format_instructions\', \'intermediate_steps\', \'agent_scratchpad\']\nNote: if you intended {"results"} to be part of the string and not a variable, please escape it with double curly braces like: \'{{"results"}}\'.\nFor troubleshooting, visit: https://python.langchain.com/docs/troubleshooting/errors/INVALID_PROMPT_INPUT '
+2025-09-22 16:19:39,797 INFO src.llm_api - [ask_sql] Collected 0 raw results from agents
+2025-09-22 16:19:39,797 INFO src.llm_api - [/ASK] Deduped final results: []
+2025-09-22 16:19:39,797 INFO src.llm_api - [/ASK] Final SQL preview: 
+2025-09-22 16:19:39,797 ERROR src.llm_api - No valid SQL generated; skipping dashboard creation.
+2025-09-22 16:25:41,249 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7f8da6eb5a50>, schema=<src.llm_api.HttpSchema object at 0x7f8da71fbad0>, exec=<src.llm_api.HttpExecute object at 0x7f8da6ec6010>
+2025-09-22 16:25:41,249 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-22 16:25:54,570 INFO src.llm_api - [ollama_json] Extracted JSON: {"intents":[{"title":"Average Sales by Person Name", "chart_type":"piechart", "note":"Show average sales per person name"}, {"title":"Annually Sales", "chart_type":"barchart", "note":"Display annually sales"}]}
+2025-09-22 16:25:54,570 INFO src.llm_api - [llm_extract_intents_ollama_http] input prompt: show me the average sales per person name as a pie chart and the annually sales as a bar chart. Raw LLM output: {"intents": [{"title": "Average Sales by Person Name", "chart_type": "piechart", "note": "Show average sales per person name"}, {"title": "Annually Sales", "chart_type": "barchart", "note": "Display annually sales"}]}
+2025-09-22 16:25:54,570 INFO src.llm_api - [ask_sql] 2 intents extracted: ['{"title": "Average Sales by Person Name", "chart_type": "piechart", "note": "Show average sales per person name"}', '{"title": "Annually Sales", "chart_type": "barchart", "note": "Display annually sales"}']
+2025-09-22 16:25:54,570 INFO src.llm_api - [ask_sql] Launching agent for intent: Show average sales per person name
+2025-09-22 16:25:54,570 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f8da6eb5a50>, schema=<src.llm_api.HttpSchema object at 0x7f8da71fbad0>, exec=<src.llm_api.HttpExecute object at 0x7f8da6ec6010>
+2025-09-22 16:25:54,570 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:25:54,571 INFO src.llm_api - [ask_sql] Launching agent for intent: Display annually sales
+2025-09-22 16:25:54,571 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f8da6eb5a50>, schema=<src.llm_api.HttpSchema object at 0x7f8da71fbad0>, exec=<src.llm_api.HttpExecute object at 0x7f8da6ec6010>
+2025-09-22 16:25:54,571 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:25:54,572 INFO src.llm_api - [ask_sql] Launched 2 agents concurrently
+2025-09-22 16:26:51,885 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:27:07,422 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:27:16,439 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:27:16,439 INFO src.llm_api - [ExecuteQueryGuard] Rows=2 Preview=[{"year": "2025-01-01T00:00:00+00:00", "total": 979.49}, {"year": "2024-01-01T00:00:00+00:00", "total": 2069.47}]
+2025-09-22 16:27:20,748 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:27:20,991 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:27:20,992 INFO src.llm_api - [ExecuteQueryGuard] Rows=3 Preview=[{"person": "Alice Johnson", "avg_sales": 352.4925}, {"person": "Bob Smith", "avg_sales": 496.33}, {"person": "Eva White", "avg_sales": 150.0}]
+2025-09-22 16:27:25,455 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:27:32,695 INFO src.llm_api - [ask_sql] Collected 2 raw results from agents
+2025-09-22 16:27:32,695 INFO src.llm_api - [/ASK] Deduped final results: [{'sql': 'SELECT p.name::text AS person, AVG(s.value) AS avg_sales FROM sales s JOIN person p ON s.person_id=p.id GROUP BY person', 'viz': {'type': 'barchart', 'format': 'table', 'title': 'Average Sales per Person'}}, {'sql': "SELECT date_trunc('year', s.sale_date) AS year, SUM(s.value) AS total FROM sales s GROUP BY year", 'viz': {'type': 'barchart', 'format': 'table', 'title': 'Annual Sales'}}]
+2025-09-22 16:27:32,695 INFO src.llm_api - [/ASK] Final SQL preview: SELECT p.name::text AS person, AVG(s.value) AS avg_sales FROM sales s JOIN person p ON s.person_id=p.id GROUP BY person;
+SELECT date_trunc('year', s.sale_date) AS year, SUM(s.value) AS total FROM sales s GROUP BY year
+2025-09-22 16:27:32,695 INFO src.llm_api - [/ASK] Generating dashboard with title: Average Sales per Person, Annual Sales — 2025-09-22 16:25:45
+2025-09-22 16:28:48,156 INFO src.llm_api - [/ASK] Dashboard validation result: ok=True, err=
+2025-09-22 16:28:48,156 INFO src.llm_api - [/ASK] Posting dashboard to Grafana MCP endpoint.
+2025-09-22 16:28:48,254 INFO src.llm_api - [/ASK] Grafana MCP response: {'folderUid': 'eeyd4elgdknb4e', 'id': 23, 'slug': 'e548a63', 'status': 'success', 'uid': 'eeaaf2af-4618-420d-90bf-b226f5432333', 'url': '/d/eeaaf2af-4618-420d-90bf-b226f5432333/e548a63', 'version': 1}
+2025-09-22 16:28:48,254 INFO src.llm_api - [/ASK] Dashboard created successfully.
+2025-09-22 16:30:35,989 INFO src.llm_api - [ollama_json] Extracted JSON: {"intents":[{"title":"Number of persons per city", "chart_type":"barchart", "note":""}, {"title":"Sum sales per product", "chart_type":"barchart", "note":""}, {"title":"Average sales per person name", "chart_type":"piechart", "note":""}, {"title":"Annually sales", "chart_type":"barchart", "note":""}, {"title":"Total sales value", "chart_type":"stat", "note":""}, {"title":"Average value per product", "chart_type":"barchart", "note":""}]}
+2025-09-22 16:30:35,989 INFO src.llm_api - [llm_extract_intents_ollama_http] input prompt: show me the number of persons per city as a bar chart and the sum sales per products as a bar chart and the average sales per person name as a pie chart and the annually sales as a bar chart and total sales value as stat and the average value per products as bar chart. Raw LLM output: {"intents": [{"title": "Number of persons per city", "chart_type": "barchart", "note": ""}, {"title": "Sum sales per product", "chart_type": "barchart", "note": ""}, {"title": "Average sales per person name", "chart_type": "piechart", "note": ""}, {"title": "Annually sales", "chart_type": "barchart", "note": ""}, {"title": "Total sales value", "chart_type": "stat", "note": ""}, {"title": "Average value per product", "chart_type": "barchart", "note": ""}]}
+2025-09-22 16:30:35,989 ERROR src.llm_api - [intents/ollama] Validation failed: 6 validation errors for IntentList
+intents.0.note
+  String should have at least 3 characters [type=string_too_short, input_value='', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/string_too_short
+intents.1.note
+  String should have at least 3 characters [type=string_too_short, input_value='', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/string_too_short
+intents.2.note
+  String should have at least 3 characters [type=string_too_short, input_value='', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/string_too_short
+intents.3.note
+  String should have at least 3 characters [type=string_too_short, input_value='', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/string_too_short
+intents.4.note
+  String should have at least 3 characters [type=string_too_short, input_value='', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/string_too_short
+intents.5.note
+  String should have at least 3 characters [type=string_too_short, input_value='', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/string_too_short; raw_obj={"intents": [{"title": "Number of persons per city", "chart_type": "barchart", "note": ""}, {"title": "Sum sales per product", "chart_type": "barchart", "note": ""}, {"title": "Average sales per person name", "chart_type": "piechart", "note": ""}, {"title": "Annually sales", "chart_type": "barchart", "note": ""}, {"title": "Total sales value", "chart_type": "stat", "note": ""}, {"title": "Average value per product", "chart_type": "barchart", "note": ""}]}
+2025-09-22 16:30:35,990 INFO src.llm_api - [ask_sql] 5 intents extracted: ['{"title": "Show Me The Number Of Persons Per City", "chart_type": "barchart", "note": "show me the number of persons per city as a bar chart"}', '{"title": "The Sum Sales Per Products", "chart_type": "barchart", "note": "the sum sales per products as a bar chart"}', '{"title": "The Average Sales Per Person Name", "chart_type": "piechart", "note": "the average sales per person name as a pie chart"}', '{"title": "Total Sales Value", "chart_type": "stat", "note": "total sales value as stat"}', '{"title": "The Average Value Per Products", "chart_type": "barchart", "note": "the average value per products as bar chart"}']
+2025-09-22 16:30:35,990 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the number of persons per city as a bar chart
+2025-09-22 16:30:35,990 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f8da6eb5a50>, schema=<src.llm_api.HttpSchema object at 0x7f8da71fbad0>, exec=<src.llm_api.HttpExecute object at 0x7f8da6ec6010>
+2025-09-22 16:30:35,990 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:30:35,990 INFO src.llm_api - [ask_sql] Launching agent for intent: the sum sales per products as a bar chart
+2025-09-22 16:30:35,990 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f8da6eb5a50>, schema=<src.llm_api.HttpSchema object at 0x7f8da71fbad0>, exec=<src.llm_api.HttpExecute object at 0x7f8da6ec6010>
+2025-09-22 16:30:35,990 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:30:35,991 INFO src.llm_api - [ask_sql] Launching agent for intent: the average sales per person name as a pie chart
+2025-09-22 16:30:35,991 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f8da6eb5a50>, schema=<src.llm_api.HttpSchema object at 0x7f8da71fbad0>, exec=<src.llm_api.HttpExecute object at 0x7f8da6ec6010>
+2025-09-22 16:30:35,991 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:30:35,991 INFO src.llm_api - [ask_sql] Launching agent for intent: total sales value as stat
+2025-09-22 16:30:35,991 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f8da6eb5a50>, schema=<src.llm_api.HttpSchema object at 0x7f8da71fbad0>, exec=<src.llm_api.HttpExecute object at 0x7f8da6ec6010>
+2025-09-22 16:30:35,991 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:30:35,991 INFO src.llm_api - [ask_sql] Launching agent for intent: the average value per products as bar chart
+2025-09-22 16:30:35,991 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f8da6eb5a50>, schema=<src.llm_api.HttpSchema object at 0x7f8da71fbad0>, exec=<src.llm_api.HttpExecute object at 0x7f8da6ec6010>
+2025-09-22 16:30:35,991 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:30:35,991 INFO src.llm_api - [ask_sql] Launched 5 agents concurrently
+2025-09-22 16:31:33,168 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:31:48,829 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:31:53,437 INFO httpx - HTTP Request: GET http://mcp_server:8000/tables "HTTP/1.1 200 OK"
+2025-09-22 16:31:53,888 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:31:53,901 INFO httpx - HTTP Request: GET http://mcp_server:8000/tables "HTTP/1.1 200 OK"
+2025-09-22 16:31:54,550 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:31:59,804 INFO httpx - HTTP Request: GET http://mcp_server:8000/tables "HTTP/1.1 200 OK"
+2025-09-22 16:32:00,361 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:32:01,890 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:32:01,890 INFO src.llm_api - [ExecuteQueryGuard] Rows=1 Preview=[{"total": 3048.96}]
+2025-09-22 16:32:04,008 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:32:09,373 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/sales "HTTP/1.1 200 OK"
+2025-09-22 16:32:11,514 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:32:14,007 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:32:14,007 INFO src.llm_api - [ExecuteQueryGuard] Rows=5 Preview=[{"product": "Smartphone", "average": 699.5}, {"product": "Blender", "average": 89.99}, {"product": "E-reader", "average": 129.99}]
+2025-09-22 16:32:16,299 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:32:18,786 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/sales "HTTP/1.1 200 OK"
+2025-09-22 16:32:21,707 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:32:24,502 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/person "HTTP/1.1 200 OK"
+2025-09-22 16:32:29,733 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:32:31,490 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/products "HTTP/1.1 200 OK"
+2025-09-22 16:32:35,027 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:32:40,131 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:32:41,651 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/person "HTTP/1.1 200 OK"
+2025-09-22 16:32:46,489 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:32:51,840 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:32:51,840 INFO src.llm_api - [ExecuteQueryGuard] Rows=0 Preview=[{"error": "ERROR: Unqualified column(s) detected: ['city']. Always table-qualify every column (e.g., sales.value, person.name)."}]
+2025-09-22 16:32:58,385 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:33:02,911 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:33:08,351 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/orders "HTTP/1.1 200 OK"
+2025-09-22 16:33:16,005 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:33:20,263 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:33:20,263 INFO src.llm_api - [ExecuteQueryGuard] Rows=5 Preview=[{"product": "Smartphone", "total": 1399.0}, {"product": "Blender", "total": 89.99}, {"product": "E-reader", "total": 259.98}]
+2025-09-22 16:33:27,920 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:33:29,403 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:33:29,403 INFO src.llm_api - [ExecuteQueryGuard] Rows=3 Preview=[{"city": "Chicago", "num_persons": 2}, {"city": "New York", "num_persons": 2}, {"city": "Boston", "num_persons": 1}]
+2025-09-22 16:33:40,826 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:33:51,787 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:34:07,847 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:34:17,520 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:34:17,520 INFO src.llm_api - [ExecuteQueryGuard] Rows=3 Preview=[{"person": "Alice Johnson", "total": 1409.97}, {"person": "Bob Smith", "total": 1488.99}, {"person": "Eva White", "total": 150.0}]
+2025-09-22 16:34:22,304 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:34:30,232 INFO src.llm_api - [ask_sql] Collected 5 raw results from agents
+2025-09-22 16:34:30,232 INFO src.llm_api - [/ASK] Deduped final results: [{'sql': 'SELECT p.city AS city, COUNT(*) AS num_persons FROM person p GROUP BY p.city ORDER BY num_persons DESC', 'viz': {'type': 'barchart', 'format': 'table', 'title': 'Number of persons per city'}}, {'sql': 'SELECT p.name::text AS product, SUM(s.value) AS total FROM sales s JOIN products p ON s.product_id=p.id GROUP BY p.name', 'viz': {'type': 'barchart', 'format': 'table', 'title': 'Sum Sales per Product'}}, {'sql': 'SELECT p.name::text AS person, SUM(s.value) AS total FROM sales s JOIN orders o ON s.order_id = o.id JOIN person p ON o.customer_id = p.id GROUP BY p.name', 'viz': {'type': 'piechart', 'format': 'table', 'title': 'Average Sales per Person Name'}}, {'sql': 'SELECT SUM(s.value) AS total FROM sales s', 'viz': {'type': 'stat', 'format': 'table', 'title': 'Total Sales Value'}}, {'sql': 'SELECT p.name::text AS product, AVG(s.value) AS average FROM sales s JOIN products p ON s.product_id=p.id GROUP BY product', 'viz': {'type': 'barchart', 'format': 'table', 'title': 'Average Value per Product'}}]
+2025-09-22 16:34:30,232 INFO src.llm_api - [/ASK] Final SQL preview: SELECT p.city AS city, COUNT(*) AS num_persons FROM person p GROUP BY p.city ORDER BY num_persons DESC;
+SELECT p.name::text AS product, SUM(s.value) AS total FROM sales s JOIN products p ON s.product_id=p.id GROUP BY p.name;
+SELECT p.name::text AS person, SUM(s.value) AS total FROM sales s JOIN orders o ON s.order_id = o.id JOIN person p ON o.customer_id = p.id GROUP BY p.name;
+SELECT SUM(s.value) AS total FROM sales s;
+SELECT p.name::text AS product, AVG(s.value) AS average FROM sales s JOIN products p ON s.product_id=p.id GROUP BY product
+2025-09-22 16:34:30,232 INFO src.llm_api - [/ASK] Generating dashboard with title: Number of persons per city, Sum Sales per Product, Average Sales per Person Name, Total Sales Value, Average Value per Product — 2025-09-22 16:30:23
+2025-09-22 16:36:40,586 INFO src.llm_api - [/ASK] Dashboard validation result: ok=True, err=
+2025-09-22 16:36:40,587 INFO src.llm_api - [/ASK] Posting dashboard to Grafana MCP endpoint.
+2025-09-22 16:36:40,867 INFO src.llm_api - [/ASK] Grafana MCP response: {'folderUid': 'eeyd4elgdknb4e', 'id': 24, 'slug': 'ad62265', 'status': 'success', 'uid': 'c226c40b-ccd4-446a-9a2f-288b492e971f', 'url': '/d/c226c40b-ccd4-446a-9a2f-288b492e971f/ad62265', 'version': 1}
+2025-09-22 16:36:40,868 INFO src.llm_api - [/ASK] Dashboard created successfully.
+2025-09-22 16:53:15,728 INFO src.llm_api - [startup] Guards initialized with inner tools: list=<src.llm_api.HttpListTables object at 0x7f57bc6c3a90>, schema=<src.llm_api.HttpSchema object at 0x7f57bbff7850>, exec=<src.llm_api.HttpExecute object at 0x7f57bbff7890>
+2025-09-22 16:53:15,728 INFO src.llm_api - [STARTUP] LLM and guards ready
+2025-09-22 16:53:40,434 INFO src.llm_api - [ollama_json] Extracted JSON: {
+  "intents": [
+    {"title": "Number of persons per city", "chart_type": "barchart", "note": "show me the number of persons per city"},
+    {"title": "Sum sales per products", "chart_type": "barchart", "note": "sum sales per products"},
+    {"title": "Average sales per person name", "chart_type": "piechart", "note": "average sales per person name as a pie chart"},
+    {"title": "Annually sales", "chart_type": "barchart", "note": "annually sales"},
+    {"title": "Total sales value", "chart_type": "stat", "note": "total sales value"},
+    {"title": "Average value per products", "chart_type": "barchart", "note": "average value per products"}
+  ]
+}
+2025-09-22 16:53:40,434 INFO src.llm_api - [llm_extract_intents_ollama_http] input prompt: show me the number of persons per city as a bar chart and the sum sales per products as a bar chart and the average sales per person name as a pie chart and the annually sales as a bar chart and total sales value as stat and the average value per products as bar chart. Raw LLM output: {"intents": [{"title": "Number of persons per city", "chart_type": "barchart", "note": "show me the number of persons per city"}, {"title": "Sum sales per products", "chart_type": "barchart", "note": "sum sales per products"}, {"title": "Average sales per person name", "chart_type": "piechart", "note": "average sales per person name as a pie chart"}, {"title": "Annually sales", "chart_type": "barchart", "note": "annually sales"}, {"title": "Total sales value", "chart_type": "stat", "note": "total sales value"}, {"title": "Average value per products", "chart_type": "barchart", "note": "average …
+2025-09-22 16:53:40,434 INFO src.llm_api - [ask_sql] 6 intents extracted: ['{"title": "Number of persons per city", "chart_type": "barchart", "note": "show me the number of persons per city"}', '{"title": "Sum sales per products", "chart_type": "barchart", "note": "sum sales per products"}', '{"title": "Average sales per person name", "chart_type": "piechart", "note": "average sales per person name as a pie chart"}', '{"title": "Annually sales", "chart_type": "barchart", "note": "annually sales"}', '{"title": "Total sales value", "chart_type": "stat", "note": "total sales value"}', '{"title": "Average value per products", "chart_type": "barchart", "note": "average value per products"}']
+2025-09-22 16:53:40,434 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the number of persons per city
+2025-09-22 16:53:40,434 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f57bc6c3a90>, schema=<src.llm_api.HttpSchema object at 0x7f57bbff7850>, exec=<src.llm_api.HttpExecute object at 0x7f57bbff7890>
+2025-09-22 16:53:40,434 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:53:40,435 INFO src.llm_api - [ask_sql] Launching agent for intent: sum sales per products
+2025-09-22 16:53:40,435 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f57bc6c3a90>, schema=<src.llm_api.HttpSchema object at 0x7f57bbff7850>, exec=<src.llm_api.HttpExecute object at 0x7f57bbff7890>
+2025-09-22 16:53:40,435 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:53:40,436 INFO src.llm_api - [ask_sql] Launching agent for intent: average sales per person name as a pie chart
+2025-09-22 16:53:40,436 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f57bc6c3a90>, schema=<src.llm_api.HttpSchema object at 0x7f57bbff7850>, exec=<src.llm_api.HttpExecute object at 0x7f57bbff7890>
+2025-09-22 16:53:40,436 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:53:40,436 INFO src.llm_api - [ask_sql] Launching agent for intent: annually sales
+2025-09-22 16:53:40,436 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f57bc6c3a90>, schema=<src.llm_api.HttpSchema object at 0x7f57bbff7850>, exec=<src.llm_api.HttpExecute object at 0x7f57bbff7890>
+2025-09-22 16:53:40,436 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:53:40,436 INFO src.llm_api - [ask_sql] Launching agent for intent: total sales value
+2025-09-22 16:53:40,436 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f57bc6c3a90>, schema=<src.llm_api.HttpSchema object at 0x7f57bbff7850>, exec=<src.llm_api.HttpExecute object at 0x7f57bbff7890>
+2025-09-22 16:53:40,436 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:53:40,436 INFO src.llm_api - [ask_sql] Launching agent for intent: average value per products
+2025-09-22 16:53:40,436 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f57bc6c3a90>, schema=<src.llm_api.HttpSchema object at 0x7f57bbff7850>, exec=<src.llm_api.HttpExecute object at 0x7f57bbff7890>
+2025-09-22 16:53:40,436 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 16:53:40,437 INFO src.llm_api - [ask_sql] Launched 6 agents concurrently
+2025-09-22 16:54:37,469 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:54:52,969 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:54:59,972 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:54:59,972 INFO src.llm_api - [ExecuteQueryGuard] Rows=1 Preview=[{"total": 3048.96}]
+2025-09-22 16:55:00,424 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:55:02,818 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:55:02,818 INFO src.llm_api - [ExecuteQueryGuard] Rows=0 Preview=[{"error": "ERROR: Unknown columns ['p.name']. Use only columns from SCHEMA and qualify every column."}]
+2025-09-22 16:55:03,352 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:55:10,239 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:55:10,240 INFO src.llm_api - [ExecuteQueryGuard] Rows=0 Preview=[{"error": "ERROR: Unknown column name(s) referenced: ['average_value']. Check SCHEMA for the actual column names."}]
+2025-09-22 16:55:10,666 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:55:12,003 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:55:12,003 INFO src.llm_api - [ExecuteQueryGuard] Rows=3 Preview=[{"city": "Chicago", "count": 2}, {"city": "New York", "count": 2}, {"city": "Boston", "count": 1}]
+2025-09-22 16:55:12,562 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:55:17,369 INFO httpx - HTTP Request: GET http://mcp_server:8000/tables "HTTP/1.1 200 OK"
+2025-09-22 16:55:20,162 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:55:23,659 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:55:23,660 INFO src.llm_api - [ExecuteQueryGuard] Rows=2 Preview=[{"year": "2025-01-01T00:00:00+00:00", "total": 979.49}, {"year": "2024-01-01T00:00:00+00:00", "total": 2069.47}]
+2025-09-22 16:55:27,323 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:55:32,182 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:55:37,530 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:55:37,531 INFO src.llm_api - [ExecuteQueryGuard] Rows=0 Preview=[{"error": "ERROR: Unknown columns ['p.name']. Use only columns from SCHEMA and qualify every column."}]
+2025-09-22 16:55:41,443 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:55:44,563 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:55:46,564 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/sales "HTTP/1.1 200 OK"
+2025-09-22 16:55:51,303 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:56:00,266 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:56:11,150 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:56:17,735 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:56:17,735 INFO src.llm_api - [ExecuteQueryGuard] Rows=5 Preview=[{"product": "Smartphone", "total": 1399.0}, {"product": "Blender", "total": 89.99}, {"product": "E-reader", "total": 259.98}]
+2025-09-22 16:56:22,249 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:56:34,357 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:56:40,427 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 16:56:40,427 INFO src.llm_api - [ExecuteQueryGuard] Rows=3 Preview=[{"person": "Alice Johnson", "total": 1409.97}, {"person": "Bob Smith", "total": 1488.99}, {"person": "Eva White", "total": 150.0}]
+2025-09-22 16:56:44,191 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:56:53,953 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 16:57:00,559 INFO src.llm_api - [ask_sql] Collected 6 raw results from agents
+2025-09-22 16:57:00,560 INFO src.llm_api - [/ASK] Deduped final results: [{'sql': 'SELECT p.city::text AS city, COUNT(*) AS count FROM person p GROUP BY city', 'viz': {'type': 'barchart', 'format': 'table', 'title': 'Number of persons per city'}}, {'sql': 'SELECT pr.name::text AS product, SUM(s.value) AS total FROM sales s JOIN products pr ON s.product_id = pr.id GROUP BY pr.name', 'viz': {'type': 'barchart', 'format': 'table', 'title': 'Sum sales per product'}}, {'sql': 'SELECT p.name::text AS person, SUM(s.value) AS total FROM sales s JOIN person p ON s.person_id=p.id GROUP BY p.name ORDER BY p.name', 'viz': {'type': 'piechart', 'format': 'table', 'title': 'Average Sales per Person Name'}}, {'sql': "SELECT date_trunc('year', s.sale_date) AS year, SUM(s.value) AS total FROM sales s GROUP BY year", 'viz': {'type': 'barchart', 'format': 'table', 'title': 'Annual Sales'}}, {'sql': 'SELECT SUM(s.value) AS total FROM sales s', 'viz': {'type': 'stat', 'format': 'table', 'title': 'Total Sales Value'}}, {'sql': 'SELECT p.name::text AS product, AVG(s.value) AS average_value FROM sales s JOIN products p ON s.product_id=p.id GROUP BY product', 'viz': {'type': 'barchart', 'format': 'table', 'title': 'Average value per product'}}]
+2025-09-22 16:57:00,560 INFO src.llm_api - [/ASK] Final SQL preview: SELECT p.city::text AS city, COUNT(*) AS count FROM person p GROUP BY city;
+SELECT pr.name::text AS product, SUM(s.value) AS total FROM sales s JOIN products pr ON s.product_id = pr.id GROUP BY pr.name;
+SELECT p.name::text AS person, SUM(s.value) AS total FROM sales s JOIN person p ON s.person_id=p.id GROUP BY p.name ORDER BY p.name;
+SELECT date_trunc('year', s.sale_date) AS year, SUM(s.value) AS total FROM sales s GROUP BY year;
+SELECT SUM(s.value) AS total FROM sales s;
+SELECT p.name::text AS product, AVG(s.value) AS average_value FROM sales s JOIN products p ON s.product_id=p.id GROUP BY product
+2025-09-22 16:57:00,560 INFO src.llm_api - [/ASK] Generating dashboard with title: Total Sales Value, Number of persons per city, Average value per product, Sum sales per product, Annual Sales, Average Sales per Person Name — 2025-09-22 16:53:20
+2025-09-22 16:59:29,061 INFO src.llm_api - [/ASK] Dashboard validation result: ok=True, err=
+2025-09-22 16:59:29,061 INFO src.llm_api - [/ASK] Posting dashboard to Grafana MCP endpoint.
+2025-09-22 16:59:29,138 INFO src.llm_api - [/ASK] Grafana MCP response: {'folderUid': 'eeyd4elgdknb4e', 'id': 25, 'slug': '19ad543', 'status': 'success', 'uid': '63ab6eed-6443-4bd8-964b-a6e82299183c', 'url': '/d/63ab6eed-6443-4bd8-964b-a6e82299183c/19ad543', 'version': 1}
+2025-09-22 16:59:29,139 INFO src.llm_api - [/ASK] Dashboard created successfully.

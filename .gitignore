@@ -10,3 +10,4 @@ ollama_models/
 -d
 logs/
 *.log
+postgres_data/

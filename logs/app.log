@@ -835,3 +835,76 @@ SELECT p.name::text AS product, AVG(s.value) AS average_value FROM sales s JOIN 
 2025-09-22 16:59:29,061 INFO src.llm_api - [/ASK] Posting dashboard to Grafana MCP endpoint.
 2025-09-22 16:59:29,138 INFO src.llm_api - [/ASK] Grafana MCP response: {'folderUid': 'eeyd4elgdknb4e', 'id': 25, 'slug': '19ad543', 'status': 'success', 'uid': '63ab6eed-6443-4bd8-964b-a6e82299183c', 'url': '/d/63ab6eed-6443-4bd8-964b-a6e82299183c/19ad543', 'version': 1}
 2025-09-22 16:59:29,139 INFO src.llm_api - [/ASK] Dashboard created successfully.
+2025-09-22 17:04:57,598 INFO src.llm_api - [ollama_json] Extracted JSON: {
+  "intents": [
+    {
+      "title": "Sales",
+      "chart_type": "table",
+      "note": "show me the list of sales"
+    },
+    {
+      "title": "Payment Type",
+      "chart_type": "table",
+      "note": "paymenttype as a table"
+    }
+  ]
+}
+2025-09-22 17:04:57,598 INFO src.llm_api - [llm_extract_intents_ollama_http] input prompt: show me the list of sales and paymenttype as a table. Raw LLM output: {"intents": [{"title": "Sales", "chart_type": "table", "note": "show me the list of sales"}, {"title": "Payment Type", "chart_type": "table", "note": "paymenttype as a table"}]}
+2025-09-22 17:04:57,598 INFO src.llm_api - [ask_sql] 2 intents extracted: ['{"title": "Sales", "chart_type": "table", "note": "show me the list of sales"}', '{"title": "Payment Type", "chart_type": "table", "note": "paymenttype as a table"}']
+2025-09-22 17:04:57,598 INFO src.llm_api - [ask_sql] Launching agent for intent: show me the list of sales
+2025-09-22 17:04:57,598 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f57bc6c3a90>, schema=<src.llm_api.HttpSchema object at 0x7f57bbff7850>, exec=<src.llm_api.HttpExecute object at 0x7f57bbff7890>
+2025-09-22 17:04:57,598 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 17:04:57,599 INFO src.llm_api - [ask_sql] Launching agent for intent: paymenttype as a table
+2025-09-22 17:04:57,599 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f57bc6c3a90>, schema=<src.llm_api.HttpSchema object at 0x7f57bbff7850>, exec=<src.llm_api.HttpExecute object at 0x7f57bbff7890>
+2025-09-22 17:04:57,599 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 17:04:57,599 INFO src.llm_api - [ask_sql] Launched 2 agents concurrently
+2025-09-22 17:05:54,909 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 17:06:10,410 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 17:06:14,538 INFO httpx - HTTP Request: GET http://mcp_server:8000/tables "HTTP/1.1 200 OK"
+2025-09-22 17:06:16,322 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 17:06:17,098 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/paymenttype "HTTP/1.1 200 OK"
+2025-09-22 17:06:19,286 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 17:06:23,235 INFO httpx - HTTP Request: GET http://mcp_server:8000/schema/sales "HTTP/1.1 200 OK"
+2025-09-22 17:06:26,570 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 17:06:26,809 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 17:06:26,810 INFO src.llm_api - [ExecuteQueryGuard] Rows=0 Preview=[{"error": "ERROR: Unqualified column(s) detected: ['id', 'method']. Always table-qualify every column (e.g., sales.value, person.name)."}]
+2025-09-22 17:06:29,564 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 17:06:32,326 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 17:06:32,326 INFO src.llm_api - [ExecuteQueryGuard] Rows=8 Preview=[{"id": 1, "person_id": 1, "product_id": 1, "sale_date": "2024-03-01", "value": 999.99, "payment_id": 1, "order_id": 1}, {"id": 2, "person_id": 2, "product_id": 2, "sale_date": "2024-03-03", "value": 699.5, "payment_id": 3, "order_id": 2}, {"id": 3, "person_id": 1, "product_id": 3, "sale_date": "2024-03-05", "value": 129.99, "payment_id": 2, "order_id": 3}]
+2025-09-22 17:06:45,201 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 17:06:47,129 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 17:06:47,129 INFO src.llm_api - [ExecuteQueryGuard] Rows=0 Preview=[{"error": "column \"paymenttype.id\" must appear in the GROUP BY clause or be used in an aggregate function\nLINE 1: SELECT paymenttype.id, paymenttype.method FROM paymenttype G...\n               ^\n"}]
+2025-09-22 17:06:50,405 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 17:06:54,763 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 17:06:54,764 INFO src.llm_api - [ExecuteQueryGuard] Rows=0 Preview=[{"error": "ERROR: Unqualified column(s) detected: ['method']. Always table-qualify every column (e.g., sales.value, person.name)."}]
+2025-09-22 17:06:57,494 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 17:07:17,644 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 17:07:25,382 INFO httpx - HTTP Request: POST http://mcp_server:8000/execute "HTTP/1.1 200 OK"
+2025-09-22 17:07:25,383 INFO src.llm_api - [ExecuteQueryGuard] Rows=5 Preview=[{"method": "Crypto", "count": 1}, {"method": "Credit Card", "count": 1}, {"method": "Cash", "count": 1}]
+2025-09-22 17:07:30,036 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 17:07:37,785 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"
+2025-09-22 17:07:42,913 ERROR src.llm_api - Could not parse JSON from agent output: Agent stopped due to iteration limit or time limit.
+2025-09-22 17:07:42,913 INFO src.llm_api - [ask_sql] Collected 1 raw results from agents
+2025-09-22 17:07:42,913 INFO src.llm_api - [/ASK] Deduped final results: [{'sql': 'SELECT * FROM sales', 'viz': {'type': 'table', 'format': 'table', 'title': 'sales'}}]
+2025-09-22 17:07:42,913 INFO src.llm_api - [/ASK] Final SQL preview: SELECT * FROM sales
+2025-09-22 17:07:42,913 INFO src.llm_api - [/ASK] Generating dashboard with title: sales — 2025-09-22 17:04:49
+2025-09-22 17:08:40,036 INFO src.llm_api - [/ASK] Dashboard validation result: ok=True, err=
+2025-09-22 17:08:40,036 INFO src.llm_api - [/ASK] Posting dashboard to Grafana MCP endpoint.
+2025-09-22 17:08:40,104 INFO src.llm_api - [/ASK] Grafana MCP response: {'folderUid': 'eeyd4elgdknb4e', 'id': 26, 'slug': 'sales-e28094-2025-09-22-173a-043a-49', 'status': 'success', 'uid': '0ac669f1-a1fe-4958-92a9-48e85ebc6e13', 'url': '/d/0ac669f1-a1fe-4958-92a9-48e85ebc6e13/sales-e28094-2025-09-22-173a-043a-49', 'version': 1}
+2025-09-22 17:08:40,105 INFO src.llm_api - [/ASK] Dashboard created successfully.
+2025-09-22 17:09:28,920 INFO src.llm_api - [ollama_json] Extracted JSON: {
+  "intents": [
+    {
+      "title": "List of Sales",
+      "chart_type": "table",
+      "note": "with this payment type"
+    }
+  ]
+}
+2025-09-22 17:09:28,920 INFO src.llm_api - [llm_extract_intents_ollama_http] input prompt: show me the list of sales with theis paymenttype as a table. Raw LLM output: {"intents": [{"title": "List of Sales", "chart_type": "table", "note": "with this payment type"}]}
+2025-09-22 17:09:28,920 INFO src.llm_api - [ask_sql] 1 intents extracted: ['{"title": "List of Sales", "chart_type": "table", "note": "with this payment type"}']
+2025-09-22 17:09:28,920 INFO src.llm_api - [ask_sql] Launching agent for intent: with this payment type
+2025-09-22 17:09:28,920 INFO src.llm_api - [ask_sql] Using inner tools: list=<src.llm_api.HttpListTables object at 0x7f57bc6c3a90>, schema=<src.llm_api.HttpSchema object at 0x7f57bbff7850>, exec=<src.llm_api.HttpExecute object at 0x7f57bbff7890>
+2025-09-22 17:09:28,921 INFO src.llm_api - [ask_sql] Agent tools: ['sql.list_tables', 'sql.schema', 'sql.query']
+2025-09-22 17:09:28,921 INFO src.llm_api - [ask_sql] Launched 1 agents concurrently
+2025-09-22 17:10:04,178 INFO httpx - HTTP Request: POST http://ollama:11434/api/chat "HTTP/1.1 200 OK"

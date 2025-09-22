@@ -8,3 +8,5 @@ ollama_models/
 .env
 -H
 -d
+logs/
+*.log

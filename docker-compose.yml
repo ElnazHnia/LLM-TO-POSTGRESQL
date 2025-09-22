@@ -1,0 +1,139 @@
+
+services:
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama    # <-- Only this
+    networks:
+      - llm-docker-setup_default
+    restart: always
+
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DATABASE}
+    env_file:
+      - .env
+    networks:
+      - llm-docker-setup_default
+    healthcheck:
+      # test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -p ${POSTGRES_PORT} -d ${POSTGRES_DATABASE} -h localhost"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DATABASE} -h localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  mcp_server:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    command: uvicorn src.pg_mcp:app --host 0.0.0.0 --port 8000 --log-level info
+    expose:
+      - "8000"           # visible to other containers on the same network
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DATABASE=llm_data_db
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=DEBUG
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python - <<'PY'\nimport socket,sys\ns=socket.socket(); s.settimeout(1)\ntry:\n  s.connect(('127.0.0.1',8000)); sys.exit(0)\nexcept Exception:\n  sys.exit(1)\nPY"]
+      interval: 5s
+      timeout: 2s
+      retries: 20
+    networks:
+      - llm-docker-setup_default
+        
+
+  fastapi:
+    build:
+      context: .
+      dockerfile: src/Dockerfile
+    ports:
+      - "8000:8000"      # publish FastAPI to your host
+    networks:
+      - llm-docker-setup_default
+    env_file:
+      - .env
+    depends_on:
+      mcp_server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    environment:
+      APP_MODULE: src.llm_api:app
+      PYTHONUNBUFFERED: "1"
+      LOG_DIR: /app/logs
+      PG_DSN: postgres://admin:password@postgres:5432/llm_data_db
+      MCP_URL: http://mcp_server:8000          # (optional) if something else reads this
+      MCP_HTTP_URL: http://mcp_server:8000     # <<< IMPORTANT: matches what your code uses
+      # OLLAMA_MODEL: llama3.2:3b
+      OLLAMA_MODEL: llama3.1:8b
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_JSON_TIMEOUT: "300"
+      OLLAMA_TIMEOUT: "300"
+    command: >
+      uvicorn src.llm_api:app
+      --host 0.0.0.0 --port 8000
+    volumes:
+      - .:/app
+      - ${HOME}/.ollama:/root/.ollama:ro
+      - ./logs:/app/logs
+      
+  
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - llm-docker-setup_default
+    environment:
+      GF_FEATURE_TOGGLES_ENABLE: "accesscontrol"
+  
+    
+  grafana-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.grafana-mcp
+    ports:
+      - "8002:8000"
+    container_name: grafana-mcp    
+    networks:
+      - llm-docker-setup_default
+    env_file:
+      - .env
+    environment:
+      APP_MODULE: src.grafana_mcp:app
+      GRAFANA_URL: http://grafana:3000
+      GRAFANA_TOKEN: ${GRAFANA_API_KEY}
+    depends_on:
+      - grafana
+
+
+volumes:
+  ollama:
+  postgres_data:
+  minio_data:
+
+networks:
+  llm-docker-setup_default:
+    name: llm-docker-setup_default
+    driver: bridge
+    external: true

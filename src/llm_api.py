@@ -10,8 +10,19 @@ from src.models import DashboardSpec
 # ----------------------------
 # Logging
 # ----------------------------
+from langchain_core.callbacks import FileCallbackHandler, StdOutCallbackHandler
+from langchain_core.globals import set_debug, set_verbose
+
+# keep terminal prints if you like
+set_debug(True)
+
 LOG_DIR = os.getenv("LOG_DIR", "/app/logs")
 os.makedirs(LOG_DIR, exist_ok=True)
+
+# <-- create callbacks AFTER LOG_DIR exists
+LC_FILE_CB = FileCallbackHandler(os.path.join(LOG_DIR, "app.log"))  # write LC trace to app.log
+LC_STDOUT_CB = StdOutCallbackHandler()
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -26,18 +37,29 @@ LOGGING = {
             "backupCount": 5,
             "encoding": "utf-8",
             "formatter": "default",
+            "level": "DEBUG",      # <-- add this
         },
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "default",
+            "level": "DEBUG",      # <-- and this
         },
     },
     "root": {
         "level": "INFO",
         "handlers": ["console", "rotating_file"],
     },
+    "loggers": {
+        # These are the LangChain namespaces that actually emit logs
+        "langchain":            {"level": "DEBUG", "handlers": ["console","rotating_file"], "propagate": False},
+        "langchain_core":       {"level": "DEBUG", "handlers": ["console","rotating_file"], "propagate": False},
+        "langchain_community":  {"level": "DEBUG", "handlers": ["console","rotating_file"], "propagate": False},
+        # (optional) if you use LangGraph
+        # "langgraph":            {"level": "DEBUG", "handlers": ["console","rotating_file"], "propagate": False},
+    },
 }
 logging.config.dictConfig(LOGGING)
+
 logger = logging.getLogger(__name__)
 
 # ----------------------------
@@ -52,7 +74,7 @@ from langchain.output_parsers import ResponseSchema, StructuredOutputParser
 from langchain_core.runnables import RunnableSequence, RunnableLambda
 import langchain
 langchain.debug = True
-logging.getLogger("langchain").setLevel(logging.WARNING)
+# logging.getLogger("langchain").setLevel(logging.WARNING)
 
 try:
     from langchain_core.tools import ToolException
@@ -113,19 +135,22 @@ DEFAULT_SYSTEM_TEXT = (
     "- Never call sql.schema twice for the same table in one run.\n"
     "- If a schema is already present in the agent_scratchpad OR the tool returns {{\"cached\": true}}, skip additional calls for that table.\n"
     "- Call sql.list_tables at most once and ONLY as the first step if table discovery is truly required.\n\n"
+    "QUALIFICATION POLICY (HARD RULE):\n"
+    "- Always table-qualify every column in SELECT, WHERE, JOIN, GROUP BY, HAVING, ORDER BY (e.g., pe.city, s.value).\n"
+    "- Aliases (e.g., AS city) are for display only; do not use them in GROUP BY/HAVING.\n\n"
     "TIME GROUPING (HARD RULE):\n"
     "- Never reference a bare column named \"year\".\n"
     "- If you need yearly grouping, derive a label and reuse it:\n"
     "SELECT date_trunc('year', s.sale_date) AS year, SUM(s.value) AS total\n"
     "FROM sales s\n"
-    "GROUP BY year\n"
+    "GROUP BY date_trunc('year', s.sale_date)\n"
     "- For monthly/weekly/daily, use date_trunc('month'|'week'|'day') similarly.\n"
-    "- Always GROUP BY the SELECT alias (e.g., GROUP BY year), not the raw function again.\n"
+    "- GROUP BY the original expression (e.g., GROUP BY date_trunc('year', s.sale_date)).\n"
     "FORMAT HARD RULE:\n"
     "- After every \"Thought:\" you MUST immediately write either:\n"
-    "a) \"Action:\" followed by a valid tool call and \"Action Input: {{...}}\" \n"
-    "b) \"Final Answer:\" followed by the final JSON on ONE LINE\n"
-    "- NEVER include backticks, code fences, or extra prose (e.g., \"Here is the corrected output:\").\n"
+    "  a) \"Action:\" followed by a valid tool call and \"Action Input: {{…}}\"\n"
+    "  b) \"Final Answer:\" followed by the final JSON on ONE LINE\n"
+    "- NEVER include backticks, code fences, or extra prose.\n"
     "CHART COUNT CONTRACT (HARD RULES):\n"
     "- Determine the set of chart INTENTS explicitly requested by the human. Let N = number of distinct chart intents (do not invent new ones).\n"
     "- Execute at most N queries (one per intent), in the same order as the human request.\n"
@@ -137,65 +162,88 @@ DEFAULT_SYSTEM_TEXT = (
     "TRACE FORMAT (CRITICAL)\n"
     "Thought: <brief reasoning> | Checklist: CAST=OK; AGG=OK; GBY=OK; EXTRA=NO\n"
     "Action: <one of: sql.list_tables, sql.schema, sql.query>\n"
-    "Action Input: {{ \"...\": \"...\" }}\n"
-    "Observation: <tool result or ERROR: ...>\n"
-    "Final Answer: {{ \"results\": [ {{ \"sql\":\"...\", \"viz\":{{ \"type\":\"<barchart|line|piechart|table|stat|gauge>\", \"format\":\"<table|time_series>\", \"title\":\"<short>\" }} }} ] }}\n\n"
+    "Action Input: {{ \"…\": \"…\" }}\n"
+    "Observation: <tool result or ERROR: …>\n"
+    "Final Answer: {{ \"results\": [ {{ \"sql\":\"…\", \"viz\":{{ \"type\":\"<barchart|line|piechart|table|stat|gauge>\", \"format\":\"<table|time_series>\", \"title\":\"<short>\" }} }} ] }}\n\n"
     "------------------------------------------------------------\n"
     "SQL LINT CHECKLIST (MANDATORY in Thought line):\n"
     "- CAST=OK → non-aggregate label expressions in SELECT may use ::text for readability; do not require ::text in GROUP BY.\n"
     "- AGG=OK → never cast aggregates.\n"
-    "- GBY=OK → every non-aggregate expression in SELECT must be grouped; in PostgreSQL you may GROUP BY the SELECT alias (preferred) or repeat the expression; never use positional indices.\n"
+    "- GBY=OK (FORMAT-AWARE — HARD RULES):\n"
+    " - BAR/PIE (viz.type in {{barchart, piechart}}):\n"
+    "  • SELECT exactly one non-aggregate label + ≥1 aggregate(s).\n"
+    "  • GROUP BY the label alias (never by *_id or by the raw expression if an alias exists).\n"
+    " - TIME SERIES (format == \"time_series\"):\n"
+    "  • Build a time label: date_trunc('<year|quarter|month|week|day>', <ts>) AS tlabel.\n"
+    "  • SELECT tlabel + ≥1 aggregate(s).\n"
+    "  • GROUP BY tlabel. No other non-aggregate columns.\n"
+    " - STAT/GAUGE (viz.type in {{stat, gauge}}):\n"
+    "  • SELECT only aggregate expression(s).\n"
+    "  • NO GROUP BY is allowed.\n"
+    " - TABLE (viz.type == \"table\"):\n"
+    "  • If the intent is an aggregated table: follow BAR/PIE or TIME SERIES rules above.\n"
+    "  • If the intent is a raw listing (TABLE VIEW POLICY): no aggregates, NO GROUP BY; join FKs to human labels and select explicit columns.\n"
+    " - UNIVERSAL:\n"
+    "  • Every non-aggregate in SELECT must appear in GROUP BY (except in STAT/GAUGE or raw listing where no non-aggregates are aggregated).\n"
+    "- FK=OK → Final SQL SELECT contains NO raw \"id\" or \"*_id\" columns; they were replaced by label aliases; GROUP BY uses the label alias.\n"
     "- EXTRA=NO → there are no auxiliary/duplicate queries for the same intent.\n\n"
     "SELECT COLUMN POLICY (HUMAN-FRIENDLY OUTPUT) — HARD REQUIREMENT:\n"
     "- Do NOT select raw primary key or foreign key columns (named \"id\" or ending with \"_id\") in SELECT.\n"
     "- JOIN to referenced tables and select a human-readable field with ::text and a clear alias:\n"
-    "  sales.person_id   → JOIN person p ON s.person_id=p.id → p.name::text AS person\n"
-    "  sales.product_id  → JOIN products pr ON s.product_id=pr.id → pr.name::text AS product\n"
-    "  sales.payment_id  → JOIN payment_type pt ON s.payment_id=pt.id → pt.method::text AS payment_type\n\n"
+    " s.person_id → FROM sales s JOIN person pe ON s.person_id=pe.id → pe.name::text AS person_name\n" 
+    " s.product_id → FROM sales s JOIN products pr ON s.product_id=pr.id → pr.name::text AS product_name\n" 
+    " o.customer_id → FROM orders o JOIN person p ON o.customer_id=p.id → p.name::text AS customer_name\n" 
+    " o.deliverer_id → FROM orders o JOIN person p ON o.deliverer_id=p.id → p.name::text AS deliverer_name\n" 
+    " s.payment_id → FROM sales s JOIN paymenttype pt ON s.payment_id=pt.id → pt.method::text AS payment_type_method\n\n"
+    "TABLE VIEW POLICY (HARD RULE):\n"
+    "1. NEVER use SELECT *.\n"
+    "2. When listing all information for a sales record, you MUST replace foreign key IDs with human-readable names using LEFT JOINs.\n"
+    "3. Specifically, replace 'person_id' with 'name' from 'person' table (alias person_name), 'product_id' with 'name' from 'products' (alias product_name).\n"
+    "4. Select every remaining column from main table explicitly, fully qualified (e.g. s.value, s.sale_date).\n"
+    "5. Example:\n"
+    "   SELECT s.sale_date, s.value, pr.name AS product_name, pe.name AS person_name, pt.method::text AS payment_type_method\n"
+    "   FROM sales s\n"
+    "   LEFT JOIN products pr ON s.product_id = pr.id\n"
+    "   LEFT JOIN person pe ON s.person_id = pe.id\n"
+    "   LEFT JOIN paymenttype pt ON s.payment_id = pt.id\n\n"
     "BAR/PIE CHART POLICY (HARD REQUIREMENT):\n"
-    "- Queries for 'barchart' and 'piechart' MUST include a non-aggregate column in the SELECT list.\n"
-    "- This non-aggregate column MUST also be present in the GROUP BY clause.\n"
-    "- The query MUST also include at least one aggregate column (e.g., SUM, AVG, COUNT).\n"
-    "- Use a clear alias for both the non-aggregate and aggregate columns for readability.\n\n"
-    "CASTING POLICY (HARD REQUIREMENT):\n"
-    "- It’s fine (but not mandatory) to cast label expressions in SELECT to ::text for readability.\n"
-    "- Do NOT force ::text inside GROUP BY; when SELECT has `p.city::text AS city`, `GROUP BY city` is valid in PostgreSQL.\n"
-    "- Never cast aggregates; never cast numeric/boolean literals/expressions.\n"
-    "- If you build a time label (e.g., DATE_TRUNC(...)), cast it to ::text in the SELECT; you may GROUP BY the alias.\n\n"
-    "GROUP BY / ORDER BY POLICY:\n"
-    "- No positional indices; use aliases or full expressions.\n"
-    "- PostgreSQL allows ORDER BY and GROUP BY to reference SELECT output names; prefer `GROUP BY <alias>` when you aliased a label in SELECT.\n\n"
-    "TOOL CALL SHAPES (STRICT):\n"
-    "- Action: sql.list_tables\n"
-    "  Action Input: {{}}\n"
-    "- Action: sql.schema\n"
-    "  Action Input: {{ \"table_name\": \"<exact name>\" }}\n"
-    "  Observation will include: {{ \"schema\":[ \"... (type)\" ], \"columns\":[ \"...\" ], \"cached\": <bool> }}\n"
-    "- Action: sql.query\n"
-    "  Action Input: {{ \"sql\":\"<full SQL>\", \"chart_type\":\"barchart|line|piechart|table|stat|gauge\", \"format\":\"table|time_series\" }}\n\n"
-    "LIST_TABLES USAGE:\n"
-    "- Call at most once and ONLY as the first step if you truly need to discover tables. Never call after any schema has been retrieved.\n\n"
-    "WORKFLOW:\n"
-    "- Determine the minimal set of chart intents (max = MAX_PANELS) and handle them in order.\n"
-    "- For each intent:\n"
-    "  1) Call sql.schema() ONCE for every table you will reference.\n"
-    "  2) Build ONE SQL that satisfies CAST/GBY and the SELECT COLUMN POLICY.\n"
-    "  3) Call sql.query once.\n"
-    "- As soon as all required schemas are present for the requested intents, STOP exploring and MOVE to sql.query calls, then emit Final Answer.\n\n"
+    "- SELECT must include exactly one non-aggregate dimension = the user-requested grouping (e.g. product_name for “per products”).\n"
+    "- GROUP BY must use that same dimension (via original expression or alias).\n"
+    "- SELECT must also include at least one aggregate metric (e.g. AVG(s.value), SUM(s.value), COUNT(*)).\n"
+    "- Do not substitute another dimension or metric during repair.\n\n"
+    "DIMENSION CANONICALIZATION (PK) — HARD RULE:\n"
+    "- Do NOT select raw primary key (e.g. o.id, s.id, p.id) in non-agretation columns in SELECT, GROUP BY and ORDER BY.\n\n"
+    "DIMENSION CANONICALIZATION (FK→LABEL) — HARD RULE:\n"
+    "- If the requested dimension is “products”:\n"
+    "   SELECT pr.name::text AS product_name, AVG(s.value) AS avg_value\n"
+    "   FROM sales s\n"
+    "   LEFT JOIN products pr ON s.product_id = pr.id\n"
+    "   GROUP BY pr.name\n"
+    "- For persons, payments, etc., follow the same pattern: always replace *_id with the human-readable name in both SELECT and GROUP BY.\n\n"
+    "RETRY CORRECTION CONTRACT (HARD RULES):\n"
+    "- LOCK the intent’s metric and dimension after the first draft SQL.\n"
+    "   * Metric LOCK = the aggregate function + target (e.g. AVG(s.value))\n"
+    "   * Dimension LOCK = the grouping key (e.g. product_name)\n"
+    "- On any SQL error, you may only make the smallest schema-aligned syntactic changes needed to respect the LOCKs:\n"
+    "   * You may replace a raw *_id in SELECT with the corresponding label, adjusting GROUP BY accordingly.\n"
+    "   * You may add the missing non-aggregate dimension to GROUP BY if SELECT includes it.\n"
+    "   * You may correct mis-qualified columns or add necessary JOINs for that dimension.\n"
+    "   * You may NOT change the aggregate (e.g. AVG → SUM or COUNT), or change to a different grouping dimension.\n"
+    "- At most ONE retry per intent is allowed.\n\n"
     "SCHEMA-STRICT MODE:\n"
-    "- Only reference columns you personally saw via sql.schema() this run (from the \"columns\" array).\n\n"
+    "- Only reference columns you personally saw via sql.schema() this run.\n"
+    "- When a foreign-key → label mapping exists (e.g. product_id → pr.name), prefer the label in SELECT and GROUP BY.\n\n"
     "ERROR BEHAVIOR:\n"
-    "- If an Observation starts with \"ERROR:\" while executing SQL, fix the SQL once and retry sql.query for that intent, then continue.\n"
-    "- If a tool indicates a cached schema, DO NOT treat it as an error; proceed.\n\n"
-    "FINAL OUTPUT SHAPE (ENFORCEMENT)\n"
-    "- On completion, emit ONE line:\n"
-    "  Final Answer: {{ \"results\": [ {{ \"sql\":\"...\", \"viz\":{{ \"type\":\"...\", \"format\":\"...\", \"title\":\"...\" }} }}, ... ] }}\n"
-    "- The length of \"results\" MUST equal N. Never include more than N items even if you executed extra queries.\n\n"
-    "FINAL OUTPUT (SUCCESS) — one line only:\n"
-    "Final Answer: {{ \"results\":[ {{ \"sql\":\"<SQL 1>\", \"viz\":{{ \"type\":\"<barchart|line|piechart|table|stat|gauge>\", \"format\":\"<table|time_series>\", \"title\":\"<short label>\" }} }}, ... ] }}\n\n"
-    "FINAL OUTPUT (ERROR) — one line only:\n"
-    "Final Answer: {{ \"error\":\"<clear message about what is missing or ambiguous>\" }}\n"
+    "- If an Observation starts with \"ERROR:\" while executing SQL, apply the Retry Correction Contract above and retry exactly once.\n"
+    "- If a tool indicates a cached schema, do not treat it as an error.\n\n"
+    "FINAL OUTPUT SHAPE (ENFORCEMENT):\n"
+    "- On success: one line:\n"
+    "   Final Answer: {{ \"results\": [ {{ \"sql\":\"…\", \"viz\":{{ \"type\":\"...\", \"format\":\"...\", \"title\":\"...\" }} }} , … ] }}\n"
+    "- The number of items in \"results\" must equal N.\n"
+    "- On error: one line:\n"
+    "   Final Answer: {{ \"error\":\"… clear message …\" }}\n"
 )
+
 
 
 # ----------------------------
@@ -607,7 +655,7 @@ class ExecuteQueryGuard(BaseTool):
             return "ERROR: invalid input for sql.query"
 
         sql = (payload.get("sql") or "").strip()
-
+        title = (payload.get("title") or "").strip()
         if not sql or "select" not in sql.lower():
             return json.dumps({"status":"error","message":"Missing or invalid SQL"})
 
@@ -697,12 +745,16 @@ class ExecuteQueryGuard(BaseTool):
         norm = normalize(raw)
         out = json.dumps(norm, ensure_ascii=False)
         self._result_cache[key] = out
+        
         logger.info(
-            "[ExecuteQueryGuard] Rows=%s Preview=%s",
+            "[ExecuteQueryGuard]\n title = %s \n SQL: %s \n Rows=%s \n Preview=%s",
+            title,
+            sql,
             norm.get("rows"),
-            json.dumps(norm.get("data_preview", [])[:3], ensure_ascii=False)
+            json.dumps( norm.get("data_preview", [])[:3], ensure_ascii=False)
         )
         print(f"[ExecuteQueryGuard] Executed SQL: {_short(sql)} => preview_rows={norm.get('rows')}")
+        
         return out
 
 
@@ -1143,7 +1195,7 @@ async def ask_sql(req: PromptRequest):
             agent=agent,
             tools=agent_tools,
             verbose=True,
-            max_iterations=8,            # ↓ lower to avoid long loops
+            max_iterations=12,            # ↓ lower to avoid long loops
             early_stopping_method="force",
             # return_intermediate_steps=False,
             handle_parsing_errors=(
@@ -1216,112 +1268,156 @@ async def ask_sql(req: PromptRequest):
     
     short_title =  ", ".join(seen_title) 
     print(f"🖼️ titles: {short_title}")
-    logger.info(f"[/ASK] Deduped final results: {dedup}")
+    logger.info(f"[/ASK] Deduped final results:\n {dedup}")
     final_answer = {"results": dedup}
     sql_preview = ";\n".join([r["sql"] for r in dedup])
-    logger.info(f"[/ASK] Final SQL preview: {sql_preview}")
+    logger.info(f"[/ASK] Final SQL preview:\n {sql_preview}")
     print("📝 Final Answer SQL preview:")
     print(sql_preview[:200] + ("..." if len(sql_preview) > 200 else ""))
 
     print(f"📝 Building dashboard JSON with {len(dedup)} panels (Ollama) + validate + push...")
+        # --- NEW: execute final deduped SQLs and include normalized previews ---
+    exec_inner = app.state.exec_guard.inner_tool  # HttpExecute()
+    exec_guard_for_final = ExecuteQueryGuard(inner_tool=exec_inner)  # reuse normalizer/logging
+    exec_outputs = []
+    try:
+        for r in dedup:
+                   
+            title = (r.get("viz") or {}).get("title") or "Result"
+            ctype = (r.get("viz") or {}).get("type", "table")
+            fmt   = (r.get("viz") or {}).get("format", "table")
+            title = (r.get("viz") or {}).get("title") or "Result"
+            logger.info(
+                "[/ASK] Executing final:\n title: %s,\n SQL: %s",
+                _short(title, 300),
+                _short(r.get("sql",""), 300),
+            )
+            payload = {
+                "sql": r["sql"],
+                "chart_type": ctype,
+                "format": fmt,
+                "title": title,
+            }
+            raw = await exec_guard_for_final._arun(tool_input=payload)
+            # normalize to dict for response
+            try:
+                norm = json.loads(raw) if isinstance(raw, str) else raw
+                logger.info(f"[/ASK] Final exec raw output: {_short(norm)}")
+            except Exception:
+                norm = {"status": "ok", "columns": [], "rows": 0, "data_preview": [raw]}
+            exec_outputs.append({
+                "sql": r["sql"],
+                "viz": r["viz"],
+                "result": norm,
+            })
+        # mark success if we executed at least one
+        logger.info(
+            "[/ASK] Final exec outputs:\n %s",
+            ", ".join(_short(o, 300) for o in exec_outputs)
+        )
+        success = len(exec_outputs) > 0        
+    except Exception as e:
+        logger.exception("Final execution of deduped SQL failed")
+        error_msg = f"Final execution failed: {e}"
+        success = False
 
     # prepare shared containers
     extra: Dict[str, Any] = {}
     fn_times: Dict[str, int] = {}
-    success = False
-    error_msg = ""
+    # success = False
+    # error_msg = ""
 
-    if dedup:  # we have at least one SQL/panel
-        try:
-            sqls = [r["sql"] for r in dedup]
-            chart_types = [(r.get("viz") or {}).get("type", "table") for r in dedup]
-            titles = [(r.get("viz") or {}).get("title", "Panel") for r in dedup]
+    # if dedup:  # we have at least one SQL/panel
+    #     try:
+    #         sqls = [r["sql"] for r in dedup]
+    #         chart_types = [(r.get("viz") or {}).get("type", "table") for r in dedup]
+    #         titles = [(r.get("viz") or {}).get("title", "Panel") for r in dedup]
 
-            short_title = f"{short_title} — {ts}"
-            logger.info(f"[/ASK] Generating dashboard with title: {short_title}")
+    #         short_title = f"{short_title} — {ts}"
+    #         logger.info(f"[/ASK] Generating dashboard with title: {short_title}")
 
-            dashboard_obj = time_call(
-                fn_times,
-                "ollama_generate",
-                generate_dashboard_with_ollama,
-                sqls=sqls,
-                chart_types=chart_types,
-                titles=titles,
-                dashboard_title=short_title,
-                time_from="now-5y",
-                time_to="now",
-            )
+    #         dashboard_obj = time_call(
+    #             fn_times,
+    #             "ollama_generate",
+    #             generate_dashboard_with_ollama,
+    #             sqls=sqls,
+    #             chart_types=chart_types,
+    #             titles=titles,
+    #             dashboard_title=short_title,
+    #             time_from="now-5y",
+    #             time_to="now",
+    #         )
 
-            _ensure_panel_formats(dashboard_obj)
-            ok, err, validated = time_call(fn_times, "validate", validate_with_pydantic, dashboard_obj)
-            logger.info(f"[/ASK] Dashboard validation result: ok={ok}, err={err}")
-            if not ok:
-                raise RuntimeError(f"Final dashboard invalid: {err}")
+    #         _ensure_panel_formats(dashboard_obj)
+    #         ok, err, validated = time_call(fn_times, "validate", validate_with_pydantic, dashboard_obj)
+    #         logger.info(f"[/ASK] Dashboard validation result: ok={ok}, err={err}")
+    #         if not ok:
+    #             raise RuntimeError(f"Final dashboard invalid: {err}")
 
-            validated_json = validated.dict(by_alias=True) if hasattr(validated, "dict") else validated
+    #         validated_json = validated.dict(by_alias=True) if hasattr(validated, "dict") else validated
 
-            logger.info(f"[/ASK] Posting dashboard to Grafana MCP endpoint.")
-            graf = time_call(
-                fn_times,
-                "post_grafana",
-                requests.post,
-                os.getenv("GRAFANA_MCP_URL", "http://grafana-mcp:8000/create_dashboard"),
-                headers={"Content-Type": "application/json"},
-                json=validated_json,
-                timeout=30,
-            )
-            graf.raise_for_status()
+    #         logger.info(f"[/ASK] Posting dashboard to Grafana MCP endpoint.")
+    #         graf = time_call(
+    #             fn_times,
+    #             "post_grafana",
+    #             requests.post,
+    #             os.getenv("GRAFANA_MCP_URL", "http://grafana-mcp:8000/create_dashboard"),
+    #             headers={"Content-Type": "application/json"},
+    #             json=validated_json,
+    #             timeout=30,
+    #         )
+    #         graf.raise_for_status()
 
-            try:
-                graf_result = graf.json()
-                logger.info(f"[/ASK] Grafana MCP response: {graf_result}")
-            except Exception:
-                graf_result = {"text": graf.text}
+    #         try:
+    #             graf_result = graf.json()
+    #             logger.info(f"[/ASK] Grafana MCP response: {graf_result}")
+    #         except Exception:
+    #             graf_result = {"text": graf.text}
 
-            extra.update(
-                {
-                    "grafana_result": graf_result,
-                    "validated": (
-                        validated.dict(by_alias=True, exclude_none=True) if hasattr(validated, "dict") else validated
-                    ),
-                    "function_times_ms": fn_times,
-                }
-            )
-            logger.info(f"[/ASK] Dashboard created successfully.")
-            print(f"✅ Dashboard created: {graf_result}")
+    #         extra.update(
+    #             {
+    #                 "grafana_result": graf_result,
+    #                 "validated": (
+    #                     validated.dict(by_alias=True, exclude_none=True) if hasattr(validated, "dict") else validated
+    #                 ),
+    #                 "function_times_ms": fn_times,
+    #             }
+    #         )
+    #         logger.info(f"[/ASK] Dashboard created successfully.")
+    #         print(f"✅ Dashboard created: {graf_result}")
 
-            success = True
+    #         success = True
 
-        except Exception as e:
-            print(f"❌ Dashboard step failed: {e}")
-            logger.exception("Dashboard pipeline failed")
-            extra["dashboard_error"] = str(e)
-            error_msg = str(e)
-    else:
-        print("❌ No valid SQL generated; skipping dashboard creation.")
-        logger.error("No valid SQL generated; skipping dashboard creation.")
-        error_msg = "No valid SQL generated"
+    #     except Exception as e:
+    #         print(f"❌ Dashboard step failed: {e}")
+    #         logger.exception("Dashboard pipeline failed")
+    #         extra["dashboard_error"] = str(e)
+    #         error_msg = str(e)
+    # else:
+    #     print("❌ No valid SQL generated; skipping dashboard creation.")
+    #     logger.error("No valid SQL generated; skipping dashboard creation.")
+    #     error_msg = "No valid SQL generated"
 
-    # one place to record metrics (no undefined 'steps')
-    try:
-        record_metric(
-            prompt=req.prompt,
-            start_ts=start,
-            success=success,
-            error_msg=error_msg,
-            iterations=len(dedup),
-            function_times=fn_times,
-        )
-    except Exception:
-        logger.exception("record_metric failed")
+    # # one place to record metrics (no undefined 'steps')
+    # try:
+    #     record_metric(
+    #         prompt=req.prompt,
+    #         start_ts=start,
+    #         success=success,
+    #         error_msg=error_msg,
+    #         iterations=len(dedup),
+    #         function_times=fn_times,
+    #     )
+    # except Exception:
+    #     logger.exception("record_metric failed")
 
     if success:
         return {
             "status": "success",
             "timestamp": ts,
             "sql": sql_preview,
-            "summary": "Final Answer: " + json.dumps(final_answer),
-            **extra,
+            "summary": "Final Answer: " + json.dumps({"results": dedup}),
+            "executions": exec_outputs,   # <-- preview rows/columns per SQL
         }
     else:
         return {
@@ -1329,5 +1425,4 @@ async def ask_sql(req: PromptRequest):
             "timestamp": ts,
             "sql": sql_preview,
             "summary": "Final Answer: " + json.dumps({"error": error_msg or "No valid SQL generated."}),
-            **extra,
         }

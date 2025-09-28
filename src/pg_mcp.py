@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
-import os, re, time, logging, json
+import os, re, time, logging, json, logging.config
 import psycopg2
 from psycopg2 import OperationalError
 from psycopg2 import sql as pg_sql
@@ -21,6 +21,55 @@ except Exception:
     get_panel_intents = None  # placeholder to avoid import errors
 
 # ===== Logging
+# ---- Logging (file + console)
+
+LOG_DIR = os.getenv("LOG_DIR", "/app/logs")
+os.makedirs(LOG_DIR, exist_ok=True)  # ensure directory exists
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,  # let uvicorn/fastapi loggers be re-configured
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+            "datefmt": "%Y-%m-%dT%H:%M:%S%z",
+        }
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "level": os.getenv("LOG_LEVEL", "INFO").upper(),
+            "formatter": "default",
+        },
+        "rotating_file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "level": os.getenv("LOG_LEVEL", "INFO").upper(),
+            "formatter": "default",
+            "filename": os.path.join(LOG_DIR, "mcp.log"),
+            "maxBytes": 5_000_000,
+            "backupCount": 5,
+            "encoding": "utf-8",
+        },
+    },
+    # configure uvicorn too so all app logs land in the file
+    "loggers": {
+        "pg_mcp":       {"level": os.getenv("LOG_LEVEL","INFO").upper(), "handlers": ["console","rotating_file"], "propagate": False},
+        "uvicorn":      {"level": os.getenv("LOG_LEVEL","INFO").upper(), "handlers": ["console","rotating_file"], "propagate": False},
+        "uvicorn.error":{"level": os.getenv("LOG_LEVEL","INFO").upper(), "handlers": ["console","rotating_file"], "propagate": False},
+        "uvicorn.access":{"level": os.getenv("LOG_LEVEL","INFO").upper(), "handlers": ["console","rotating_file"], "propagate": False},
+        "sqlalchemy.engine": {"level": "WARNING", "handlers": ["console","rotating_file"], "propagate": False},
+    },
+    "root": {  # anything uncaught
+        "level": os.getenv("LOG_LEVEL", "INFO").upper(),
+        "handlers": ["console", "rotating_file"],
+    },
+}
+
+logging.config.dictConfig(LOGGING)
+
+logger = logging.getLogger("pg_mcp")
+logger.info("[FASTAPIMCP] logging configured; file=%s", os.path.join(LOG_DIR, "mcp.log"))
+# ===== FastAPI app + middleware + DB init
 
 # 1) Load .env first
 load_dotenv()
@@ -78,6 +127,14 @@ class PanelIntentsRequest(BaseModel):
 
 class CheckRequest(BaseModel):
     sql: str
+
+def _extract_select_aliases(sql: str) -> Set[str]:
+    """Extract column aliases from SELECT clause (AS clauses)"""
+    select_part = re.split(r'\bFROM\b', sql, flags=re.IGNORECASE)[0]
+    aliases = set()
+    for match in re.findall(r'\bAS\s+([a-zA-Z_][\w]*)\b', select_part, re.IGNORECASE):
+        aliases.add(match.lower())
+    return aliases
 
 # ===== Connection
 def get_connection(max_retries: int = 5, backoff_base: float = 1.0):
@@ -189,43 +246,59 @@ def _extract_identifiers(sql: str):
     return tables, cols, bare, alias_map
 
 def _find_unqualified_or_unknown(sql: str, tables_used: Set[str], alias_map: Dict[str,str], catalog: Dict[str,Any]):
-    logger.info(f"[FASTAPIMCP] FIND UNQUALIFIED OR UNKNOWN: {sql}")
-    known_cols = set()
-    for t in tables_used:
-        t_short = t.split(".")[-1]
-        known_cols |= set(catalog["columns"].get(t_short, []))
+    try:
+        logger.info(f"[FASTAPIMCP] FIND UNQUALIFIED OR UNKNOWN:  {sql}")
+        known_cols = set()
+        logger.info(f"[FASTAPIMCP] TABLES USED: {tables_used}, ALIAS MAP: {alias_map}")
+        for t in tables_used:
+            t_short = t.split(".")[-1]
+            known_cols |= set(catalog["columns"].get(t_short, []))
+            logger.info(f"[FASTAPIMCP] KNOWN COLS FOR {t_short}: {catalog['columns'].get(t_short, [])}")
+        logger.info(f"[FASTAPIMCP] KNOWN COLS: {known_cols}")
+        tokens = [tok.lower() for tok in re.findall(r"\b([a-zA-Z_][\w]*)\b", sql)]
+        tokens = [t for t in tokens if t not in SQL_KEYWORDS and not t.isdigit()]
+        logger.info(f"[FASTAPIMCP] TOKENS BEFORE FILTERING: {tokens}")
+        # Get SELECT aliases and exclude them from validation
+        select_aliases = _extract_select_aliases(sql)
+        logger.info(f"[FASTAPIMCP] SELECT ALIASES TO IGNORE: {select_aliases}")
+        
+        aliases = set(alias_map.keys())
+        tables_short = {t.split(".")[-1].lower() for t in tables_used}
+        logger.info(f"[FASTAPIMCP] TABLES SHORT: {tables_short}, ALIASES TO IGNORE: {aliases}")
+        # Remove both table aliases and SELECT aliases from validation
+        tokens = [t for t in tokens if t not in aliases and t not in tables_short and t not in select_aliases]
+        logger.info(f"[FASTAPIMCP] TOKENS AFTER FILTERING: {tokens}")
+        qualified_cols = {c.lower() for _, c in re.findall(r"\b([a-zA-Z_][\w]*)\.([a-zA-Z_][\w]*)\b", sql)}
+        logger.info(f"[FASTAPIMCP] QUALIFIED COLS: {qualified_cols}")
+        unqualified, unknown = [], []
+        for tok in tokens:
+            if tok in qualified_cols:
+                continue
+            if tok in {c.lower() for c in known_cols}:
+                unqualified.append(tok)
+            elif re.search(r"(_id$|_name$|^name$|date$|value$)", tok) and tok not in {c.lower() for c in known_cols}:
+                unknown.append(tok)
+        logger.info(f"[FASTAPIMCP] PRE-DEDUPE UNQUALIFIED: {unqualified}, UNKNOWN: {unknown}")
+        def dedupe(seq):
+            seen=set(); out=[]
+            for x in seq:
+                if x not in seen:
+                    seen.add(x); out.append(x)
+            logger.info(f"[FASTAPIMCP] DEDUPED LIST: {out}")
+            return out
 
-    tokens = [tok.lower() for tok in re.findall(r"\b([a-zA-Z_][\w]*)\b", sql)]
-    tokens = [t for t in tokens if t not in SQL_KEYWORDS and not t.isdigit()]
-    aliases = set(alias_map.keys())
-    tables_short = {t.split(".")[-1].lower() for t in tables_used}
-    tokens = [t for t in tokens if t not in aliases and t not in tables_short]
-
-    qualified_cols = {c.lower() for _, c in re.findall(r"\b([a-zA-Z_][\w]*)\.([a-zA-Z_][\w]*)\b", sql)}
-
-    unqualified, unknown = [], []
-    for tok in tokens:
-        if tok in qualified_cols:
-            continue
-        if tok in {c.lower() for c in known_cols}:
-            unqualified.append(tok)
-        elif re.search(r"(_id$|_name$|^name$|date$|value$)", tok) and tok not in {c.lower() for c in known_cols}:
-            unknown.append(tok)
-
-    def dedupe(seq):
-        seen=set(); out=[]
-        for x in seq:
-            if x not in seen:
-                seen.add(x); out.append(x)
-        return out
-
-    return dedupe(unqualified), dedupe(unknown)
+        logger.info(f"[FASTAPIMCP] UNQUALIFIED: {unqualified}, UNKNOWN: {unknown}")
+        return dedupe(unqualified), dedupe(unknown)
+    except Exception as e:
+        logger.exception(f"[FASTAPIMCP] EXCEPTION IN FIND UNQUALIFIED OR UNKNOWN: {e}")
+        return [], []
 
 def validate_sql(sql: str) -> str | None:
     logger.info(f"[FASTAPIMCP] VALIDATE SQL: {sql}")
     if not isinstance(sql, str) or not sql.strip():
         return "ERROR: Provide a non-empty SQL string."
     if _has_select_star(sql):
+        logger.info("[FASTAPIMCP] SELECT * DETECTED")
         return "ERROR: Do not use SELECT *. List columns explicitly, and qualify them with table aliases/names."
 
     catalog = get_catalog()
@@ -236,6 +309,7 @@ def validate_sql(sql: str) -> str | None:
 
     unknown_tables = {t for t in tables_short if t not in set(catalog["tables"])}
     if unknown_tables:
+        logger.info(f"[FASTAPIMCP] UNKNOWN TABLES: {unknown_tables}")
         return f"ERROR: Unknown tables {sorted(list(unknown_tables))}. Allowed: {sorted(catalog['tables'])}."
 
     bad_cols = []
@@ -247,14 +321,17 @@ def validate_sql(sql: str) -> str | None:
         else:
             bad_cols.append(f"{t}.{c}")
     if bad_cols:
+        logger.info(f"[FASTAPIMCP] BAD COLUMNS: {bad_cols}")
         return ("ERROR: Unknown columns "
                 f"{bad_cols}. Use only columns from SCHEMA and qualify every column.")
 
     unq, unk = _find_unqualified_or_unknown(sql, tables_short, alias_map, catalog)
     if unq:
+        logger.info(f"[FASTAPIMCP] UNQUALIFIED COLUMNS: {unq}")
         return ("ERROR: Unqualified column(s) detected: "
                 f"{unq}. Always table-qualify every column (e.g., sales.value, person.name).")
     if unk:
+        logger.info(f"[FASTAPIMCP] UNKNOWN COLUMNS: {unk}")
         return ("ERROR: Unknown column name(s) referenced: "
                 f"{unk}. Check SCHEMA for the actual column names.")
     return None
@@ -269,6 +346,7 @@ def list_tables():
         logger.info(f"[FASTAPIMCP] CATALOG: {cat}")
         return cat["tables"]
     except Exception as e:
+        logger.info(f"[FASTAPIMCP] EXCEPTION IN LIST TABLES: {e}")
         return {"error": str(e)}
 
 # --- add near your other module-level caches
@@ -298,6 +376,7 @@ def get_schema(table_name: str):
         rows = cur.fetchall()
         cur.close(); conn.close()
         if not rows:
+            logger.info(f"[FASTAPIMCP] UNKNOWN TABLE: {table_name}")
             return {"error": f"Unknown table '{table_name}'."}
 
         schema = [f"{col} ({dtype})" for col, dtype in rows]
@@ -309,6 +388,7 @@ def get_schema(table_name: str):
         logger.info(f"[FASTAPIMCP] CACHED SCHEMA for {table_name}: {schema}")
         return {"schema": schema, "columns": cols, "cached": False}
     except Exception as e:
+        logger.info(f"[FASTAPIMCP] EXCEPTION IN GET SCHEMA: {e}")
         return {"error": str(e)}
 
 
@@ -328,6 +408,7 @@ def get_example_row(table_name: str):
         logger.info(f"[FASTAPIMCP] EXAMPLE ROW for {table_name}: {row}")
         return {"example": dict(zip(columns, row)) if row else {}}
     except Exception as e:
+        logger.info(f"[FASTAPIMCP] EXCEPTION IN GET EXAMPLE ROW: {e}")
         return {"error": str(e)}
 
 @app.post("/check", operation_id="sql.check")
@@ -342,19 +423,25 @@ def execute_query(request: SQLRequest):
     results = []
     try:
         conn = get_connection(); cur = conn.cursor()
+        logger.info(f"[FASTAPIMCP] CONNECTION ESTABLISHED")
         for sql_text in request.sql:
+            logger.info(f"[FASTAPIMCP] VALIDATE AND EXECUTE SQL: {sql_text}")
             err = validate_sql(sql_text)
+            logger.info(f"[FASTAPIMCP] VALIDATION RESULT: {err or 'OK'}")
             if err:
                 cur.close(); conn.close()
                 return {"error": err}
             cur.execute(sql_text)
             rows = cur.fetchall()
             cols = [d[0] for d in cur.description]
+            logger.info(f"[FASTAPIMCP] QUERY RETURNED {len(rows)} ROWS, COLS: {cols}")
             results.append([dict(zip(cols, r)) for r in rows])
+        logger.info(f"[FASTAPIMCP] ALL QUERIES EXECUTED")
         cur.close(); conn.close()
         logger.info(f"[FASTAPIMCP] QUERY RESULTS: {results}")
         return {"results": results}
     except Exception as e:
+        logger.exception(f"[FASTAPIMCP] EXCEPTION DURING QUERY")
         return {"error": str(e)}
 
 # ===== Optional RAG passthrough (disabled by default)

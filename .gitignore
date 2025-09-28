@@ -11,3 +11,11 @@ ollama_models/
 logs/
 *.log
 postgres_data/
+venv310/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+.idea/
+.vscode/

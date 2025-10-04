@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
-import os, re, time, logging, json, logging.config
+import os, re, time, logging, json, logging.config, requests
 import psycopg2
 from psycopg2 import OperationalError
 from psycopg2 import sql as pg_sql

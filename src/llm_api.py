@@ -1,12 +1,14 @@
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, ValidationError
-import os, re, json, ast, time, asyncio, requests, logging, logging.config, httpx
+import os, re, json, ast, time, asyncio, requests, logging, logging.config, httpx, types
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Callable, Type, Literal
 from contextlib import suppress
 from src.metrics import record_metric, time_call
 from src.models import DashboardSpec
+from collections.abc import Iterable
+
 # ----------------------------
 # Logging
 # ----------------------------
@@ -1085,6 +1087,270 @@ def llm_extract_intents_ollama_http(prompt: str) -> List[dict]:
     return out
 
 
+# ===== creaton of Grafana dasboard
+def create_grafana_dashboard(request: Any) -> Dict[str, Any]:
+    """
+    Generate a Grafana dashboard definition from a request object.
+
+    The request is expected to include either:
+
+    * ``request.sql`` and ``request.chart_type`` (legacy format), or
+    * ``request.sql`` as a list of dictionaries, each with keys
+      ``sql`` and ``viz`` (new format).  The ``viz`` dictionary can
+      contain ``type``, ``format`` and ``title`` keys.
+
+    Regardless of the input format, this function constructs a list
+    of Grafana panel definitions and packages them into a dashboard
+    object.  The Grafana folder UID is looked up dynamically by
+    querying the API.  The resulting dashboard JSON is returned
+    without persisting it to Grafana – that responsibility lies
+    elsewhere in the application.
+
+    Parameters
+    ----------
+    request : Any
+        A request-like object.  It must provide at least
+        ``request.sql`` and optionally ``request.chart_type`` and
+        ``request.title`` depending on the payload format.
+
+    Returns
+    -------
+    Dict[str, Any]
+        A dictionary representing the Grafana dashboard definition.
+    """
+
+    # Determine whether we have been passed a list of structured
+    # objects (each with an ``sql`` and ``viz`` key) or the
+    # legacy separate lists of SQL and chart types.  We normalise
+    # both formats into a list of dictionaries with the keys
+    # ``sql`` and ``viz``.
+    queries: List[Dict[str, Any]]
+    sql_data = getattr(request, "sql", None)
+
+    # Normalise the incoming data into a list of panel definitions.
+    if isinstance(sql_data, Iterable) and sql_data and isinstance(sql_data[0], dict):
+        # New format: request.sql is already a list of dicts
+        queries = sql_data  # type: ignore[assignment]
+    else:
+        # Legacy format: request.sql is a list of raw SQL strings
+        # and request.chart_type contains the corresponding chart types.
+        chart_types = getattr(request, "chart_type", [])
+        # Ensure we have lists to zip over
+        if not isinstance(sql_data, list):
+            sql_values = [sql_data]
+        else:
+            sql_values = sql_data
+        if not isinstance(chart_types, list):
+            ct_values = [chart_types]
+        else:
+            ct_values = chart_types
+        # Pad chart types if fewer than SQL statements
+        if len(ct_values) < len(sql_values):
+            ct_values += ["timeseries"] * (len(sql_values) - len(ct_values))
+        queries = [  # type: ignore[assignment]
+            {
+                "sql": sql_stmt,
+                "viz": {
+                    "type": ct if ct is not None else "table",
+                    "format": None,
+                    "title": None,
+                },
+            }
+            for sql_stmt, ct in zip(sql_values, ct_values)
+        ]
+
+    # Dynamically fetch the Grafana folder UID.  If authentication
+    # fails or the server returns an error, fall back to ``None``.
+    GRAFANA_URL = getattr(request, "grafana_url", "") or ""
+    headers = getattr(request, "headers", {}) or {}
+    folder_uid = None
+    if GRAFANA_URL:
+        try:
+            response = requests.get(f"{GRAFANA_URL}/api/folders", headers=headers)
+            print("📦 pg-mcp Folders raw response:", response.text)
+            print("📦 pg-mcp Folders status code:", response.status_code)
+            if response.status_code == 200:
+                folders = response.json()
+                # Some Grafana deployments return a list, others a dict with a message
+                if isinstance(folders, list):
+                    folder_uid = next(
+                        (f.get("uid") for f in folders if f.get("title") == "LLM_To_POSTGRESQL_FOLDER"),
+                        None,
+                    )
+                    print("📦 pg-mcp Folder UID:", folder_uid)
+                elif isinstance(folders, dict) and "message" not in folders:
+                    # Unexpected dict shape without error message; ignore
+                    pass
+            else:
+                # Non-200 status: log and continue with None
+                print(f"⚠️ Grafana folder API returned status {response.status_code}; proceeding without folder UID")
+        except Exception as e:
+            # Any exception (e.g., network error) is logged and ignored
+            print(f"⚠️ Could not fetch Grafana folder UID: {e}")
+            folder_uid = None
+    else:
+        print("⚠️ No Grafana URL configured; proceeding without folder UID")
+
+    # Map natural language chart types to Grafana panel types.  If
+    # ``viz.type`` is already a Grafana panel type (e.g. "table"),
+    # the mapping will return the same key.
+    type_map: Dict[str, str] = {
+        "line chart": "timeseries",
+        "bar chart": "barchart",
+        "pie chart": "piechart",
+        "table": "table",
+        "scatter plot": "scatter",
+        "area chart": "timeseries",
+    }
+    # Map panel types to Grafana target formats.  Grafana
+    # distinguishes between ``time_series`` (for timeseries panels)
+    # and ``table`` (for table-based panels).  When the incoming
+    # ``viz.format`` is provided, it overrides this mapping.
+    format_map: Dict[str, str] = {
+        "timeseries": "time_series",
+        "barchart": "table",
+        "piechart": "table",
+        "table": "table",
+        "scatter": "table",
+    }
+
+    # Determine the number of reports.  If the caller supplies
+    # ``num_reports`` on the request, we use it; otherwise we infer
+    # the number from the queries list.  This value governs how
+    # panels are laid out on the dashboard.  For an even number of
+    # reports, panels are displayed two per row.  For an odd number
+    # of reports, all rows except the last contain two panels; the
+    # final panel spans the full width of the dashboard.
+    try:
+        num_reports = int(getattr(request, "num_reports", len(queries)))
+    except Exception:
+        num_reports = len(queries)
+    if num_reports <= 0:
+        num_reports = len(queries)
+
+    panels: List[Dict[str, Any]] = []
+    for i, query in enumerate(queries):
+        # Extract SQL and visualisation metadata
+        sql_stmt = query.get("sql")
+        viz = query.get("viz", {}) if query else {}
+        chart_type_raw = viz.get("type", "table") or "table"
+        viz_format = viz.get("format")
+        viz_title = viz.get("title")
+
+        # Normalise the chart type: map natural language labels to
+        # Grafana panel types.  If the mapping does not recognise the
+        # input, use the lowercase version of the provided type.
+        chart_type_lower = str(chart_type_raw).lower()
+        panel_type = type_map.get(chart_type_lower, chart_type_lower)
+        # Determine the target format.  If ``viz.format`` is
+        # specified, use it; otherwise fall back to the default for
+        # the panel type.  Default to ``time_series`` if no match.
+        format_type = viz_format or format_map.get(panel_type, "time_series")
+        # Construct a sensible panel title.  Prefer the provided title;
+        # otherwise build one from the panel index and chart type.
+        if viz_title:
+            title_str = viz_title
+        else:
+            # Capitalise the chart type for display
+            title_str = f"Panel {i + 1}: {chart_type_lower.title()}"
+        print(f"▶️ Panel {i+1}: type={panel_type}, format={format_type}")
+
+        # Compute the position of this panel on the dashboard grid.  For
+        # even numbers of reports, we show two panels per row with
+        # equal widths.  For odd numbers of reports, all rows except
+        # the last contain two panels; the final panel occupies the
+        # entire row.  Each panel row has a fixed height of 8 units.
+        if num_reports % 2 != 0 and i == num_reports - 1:
+            # Last panel in an odd-numbered dashboard: full width
+            panel_width = 24
+            x_pos = 0
+            row = i // 2
+        else:
+            # Panels appear two per row
+            panel_width = 12
+            row = i // 2
+            # Determine if this is the left or right panel in the row
+            if i % 2 == 0:
+                x_pos = 0
+            else:
+                x_pos = 12
+        y_pos = row * 8
+
+        panel = {
+            # Grafana panels require a unique integer ID.  We use the
+            # zero-based index ``i`` for each panel, which satisfies
+            # the requirement for uniqueness within the dashboard.
+            "id": i,
+            "title": title_str,
+            "type": panel_type,
+            "datasource": {"type": "postgres", "uid": "feyd4obe5zb40b"},
+            "targets": [
+                {
+                    "refId": chr(65 + i),
+                    "rawSql": sql_stmt,
+                    "format": format_type,
+                    "interval": "auto",
+                }
+            ],
+            # Assign size and position based on the number of columns
+            "gridPos": {"h": 8, "w": panel_width, "x": x_pos, "y": y_pos},
+            "maxDataPoints": 1,
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "drawStyle": "bars",
+                        "lineWidth": 1,
+                        "fillOpacity": 80,
+                        "axisPlacement": "auto",
+                    }
+                },
+                "overrides": [],
+            },
+            "options": {
+                "tooltip": {"mode": "single"},
+                "legend": {"displayMode": "list", "placement": "bottom"},
+                **(
+                    {
+                        "reduceOptions": {
+                            "calcs": ["lastNotNull"],
+                            "fields": "",
+                            "values": True,
+                        }
+                    }
+                    if panel_type == "piechart"
+                    else {}
+                ),
+            },
+        }
+        panels.append(panel)
+
+    # Build the final dashboard definition.  Use request.title if
+    # available; otherwise construct a default title.  Append the
+    # current time to ensure uniqueness.
+    dashboard_title_base = getattr(request, "title", "Generated Dashboard") or "Generated Dashboard"
+    dashboard_title = dashboard_title_base + datetime.now().strftime("%H:%M:%S")
+    dashboard: Dict[str, Any] = {
+        "dashboard": {
+            "title": dashboard_title,
+            "refresh": "5s",
+            "schemaVersion": 36,
+            "version": 1,
+            "panels": panels,
+        },
+        "folderUid": folder_uid,
+        "overwrite": False,
+    }
+
+    # Remove any conflicting keys that might already be present on
+    # ``dashboard['dashboard']``.  While we do not expect the new
+    # format to include these, this mirrors the behaviour of the
+    # original implementation and keeps us compatible with Grafana's
+    # API requirements.
+    for key in ["uid", "id", "folderId"]:
+        dashboard["dashboard"].pop(key, None)
+
+    print("📦 pg-mcp Dashboard JSON:", dashboard)
+    return dashboard
 
 # ---------------------------
 # Startup: configure LLM and base guards (with placeholders for MCP)
@@ -1188,17 +1454,21 @@ async def ask_sql(req: PromptRequest):
             ("human", "{input}\n\n{agent_scratchpad}")
         ])
 
+        # 1) Build a ReAct agent that can think + call tools
+        agent = create_react_agent(
+            llm=app.state.llm,          # the LLM client you created at startup
+            tools=agent_tools,          # the tools the agent is allowed to use (list_tables, schema, query)
+            prompt=prompt_template      # the rules/format the agent must follow (your system prompt)
+        )
 
-        agent = create_react_agent(llm=app.state.llm, tools=agent_tools, prompt=prompt_template)
-
+        # 2) Wrap the agent in an executor that runs the ReAct loop safely
         executor = AgentExecutor.from_agent_and_tools(
             agent=agent,
-            tools=agent_tools,
-            verbose=True,
-            max_iterations=12,            # ↓ lower to avoid long loops
-            early_stopping_method="force",
-            # return_intermediate_steps=False,
-            handle_parsing_errors=(
+            tools=agent_tools,          # same tools passed through
+            verbose=True,               # print Thought/Action/Observation for debugging
+            max_iterations=12,          # hard stop so it can’t loop forever
+            early_stopping_method="force",  # if it hits the limit, stop immediately
+            handle_parsing_errors=(     # if LLM outputs the wrong shape, tell it how to fix format
                 "Reformat your last message to comply with ReAct:\n"
                 "It must be either:\n"
                 '1) Thought: ...\\nAction: <tool name>\\nAction Input: { ... }\n'
@@ -1209,14 +1479,20 @@ async def ask_sql(req: PromptRequest):
         )
 
         print(f"[ask_sql] Agent created with max_iterations={executor.max_iterations}")
+        logger.info(f"[ask_sql] Agent created with max_iterations={executor.max_iterations}")
         
+        # 4) Run this agent asynchronously for one intent and collect the task
+        tasks.append(
+            asyncio.create_task(
+                executor.ainvoke({
+                    "input": intent_text,                           # the user’s specific intent (e.g., “sum sales by product as bar chart”)
+                    "tools": "\n".join(f"- {t.name}" for t in agent_tools),  # rendered into the prompt for the LLM to see
+                    "tool_names": ", ".join(t.name for t in agent_tools),     # same, compact form
+                    "format_instructions": FORMAT_INSTRUCTIONS      # reminds LLM of the exact JSON shape for Final Answer
+                })
+            )
+        )
 
-        tasks.append(asyncio.create_task(executor.ainvoke({
-            "input": intent_text,
-            "tools": "\n".join(f"- {t.name}" for t in agent_tools),
-            "tool_names": ", ".join(t.name for t in agent_tools),
-            "format_instructions": FORMAT_INSTRUCTIONS,
-        })))
 
         
                                                
@@ -1315,7 +1591,8 @@ async def ask_sql(req: PromptRequest):
             "[/ASK] Final exec outputs:\n %s",
             ", ".join(_short(o, 300) for o in exec_outputs)
         )
-        success = len(exec_outputs) > 0        
+        success = len(exec_outputs) > 0    
+        error_msg = ""    
     except Exception as e:
         logger.exception("Final execution of deduped SQL failed")
         error_msg = f"Final execution failed: {e}"
@@ -1325,91 +1602,119 @@ async def ask_sql(req: PromptRequest):
     extra: Dict[str, Any] = {}
     fn_times: Dict[str, int] = {}
     # success = False
-    # error_msg = ""
+    
 
-    # if dedup:  # we have at least one SQL/panel
-    #     try:
-    #         sqls = [r["sql"] for r in dedup]
-    #         chart_types = [(r.get("viz") or {}).get("type", "table") for r in dedup]
-    #         titles = [(r.get("viz") or {}).get("title", "Panel") for r in dedup]
+    if dedup:  # we have at least one SQL/panel
+        try:
+            # sqls = [r["sql"] for r in dedup]
+            # chart_types = [(r.get("viz") or {}).get("type", "table") for r in dedup]
+            # titles = [(r.get("viz") or {}).get("title", "Panel") for r in dedup]
 
-    #         short_title = f"{short_title} — {ts}"
-    #         logger.info(f"[/ASK] Generating dashboard with title: {short_title}")
+            # short_title = f"{short_title[:85]} — {ts}"
+            # logger.info(f"[/ASK] Generating dashboard with title: {short_title}")
 
-    #         dashboard_obj = time_call(
-    #             fn_times,
-    #             "ollama_generate",
-    #             generate_dashboard_with_ollama,
-    #             sqls=sqls,
-    #             chart_types=chart_types,
-    #             titles=titles,
-    #             dashboard_title=short_title,
-    #             time_from="now-5y",
-    #             time_to="now",
-    #         )
+            # dashboard_obj = time_call(
+            #     fn_times,
+            #     "ollama_generate",
+            #     generate_dashboard_with_ollama,
+            #     sqls=sqls,
+            #     chart_types=chart_types,
+            #     titles=titles,
+            #     dashboard_title=short_title,
+            #     time_from="now-5y",
+            #     time_to="now",
+            # )
+            
+            # Each deduped result already has a 'sql' and a 'viz' dictionary.
+            sql_data = [{"sql": r["sql"], "viz": r.get("viz", {})} for r in dedup]
+            logger.info(f"[/ASK] SQL data for dashboard generation: {_short(sql_data, 1000)}")
+            # Build a simple request object for the new dashboard function.
+            # request_obj = types.SimpleNamespace(
+            #     sql=sql_data,
+            #     title=short_title,                     # Use your composed dashboard title
+            #     grafana_url=os.getenv("GRAFANA_URL"),  # URL of your Grafana instance
+            #     headers={"Content-Type": "application/json"},
+            #     num_reports=len(sql_data)              # Number of panels to lay out
+            # )
+            
+            request_obj = types.SimpleNamespace(
+                sql=sql_data,
+                title=short_title,
+                grafana_url="",
+                headers={},
+                num_reports=len(sql_data)
+            )
+            # Generate the dashboard JSON using the new function
+            dashboard_obj = time_call(
+                fn_times,
+                "ollama_generate",
+                create_grafana_dashboard,
+                request=request_obj
+            )
+            logger.info(f"[/ASK] Generated dashboard object: {_short(dashboard_obj, 1000)}")
 
-    #         _ensure_panel_formats(dashboard_obj)
-    #         ok, err, validated = time_call(fn_times, "validate", validate_with_pydantic, dashboard_obj)
-    #         logger.info(f"[/ASK] Dashboard validation result: ok={ok}, err={err}")
-    #         if not ok:
-    #             raise RuntimeError(f"Final dashboard invalid: {err}")
+            _ensure_panel_formats(dashboard_obj)
+            ok, err, validated = time_call(fn_times, "validate", validate_with_pydantic, dashboard_obj)
+            logger.info(f"[/ASK] Dashboard validation result: ok={ok}, err={err}")
+            if not ok:
+                raise RuntimeError(f"Final dashboard invalid: {err}")
 
-    #         validated_json = validated.dict(by_alias=True) if hasattr(validated, "dict") else validated
+            validated_json = validated.dict(by_alias=True) if hasattr(validated, "dict") else validated
 
-    #         logger.info(f"[/ASK] Posting dashboard to Grafana MCP endpoint.")
-    #         graf = time_call(
-    #             fn_times,
-    #             "post_grafana",
-    #             requests.post,
-    #             os.getenv("GRAFANA_MCP_URL", "http://grafana-mcp:8000/create_dashboard"),
-    #             headers={"Content-Type": "application/json"},
-    #             json=validated_json,
-    #             timeout=30,
-    #         )
-    #         graf.raise_for_status()
+            logger.info(f"[/ASK] Posting dashboard to Grafana MCP endpoint.")
+            graf = time_call(
+                fn_times,
+                "post_grafana",
+                requests.post,
+                os.getenv("GRAFANA_MCP_URL", "http://grafana-mcp:8000/create_dashboard"),
+                headers={"Content-Type": "application/json"},
+                json=validated_json,
+                timeout=30,
+            )
+            graf.raise_for_status()
 
-    #         try:
-    #             graf_result = graf.json()
-    #             logger.info(f"[/ASK] Grafana MCP response: {graf_result}")
-    #         except Exception:
-    #             graf_result = {"text": graf.text}
+            try:
+                graf_result = graf.json()
+                logger.info(f"[/ASK] Grafana MCP response: {graf_result}")
+            except Exception:
+                graf_result = {"text": graf.text}
 
-    #         extra.update(
-    #             {
-    #                 "grafana_result": graf_result,
-    #                 "validated": (
-    #                     validated.dict(by_alias=True, exclude_none=True) if hasattr(validated, "dict") else validated
-    #                 ),
-    #                 "function_times_ms": fn_times,
-    #             }
-    #         )
-    #         logger.info(f"[/ASK] Dashboard created successfully.")
-    #         print(f"✅ Dashboard created: {graf_result}")
+            extra.update(
+                {
+                    "grafana_result": graf_result,
+                    "validated": (
+                        validated.dict(by_alias=True, exclude_none=True) if hasattr(validated, "dict") else validated
+                    ),
+                    "function_times_ms": fn_times,
+                }
+            )
+            logger.info(f"[/ASK] Dashboard created successfully.")
+            print(f"✅ Dashboard created: {graf_result}")
 
-    #         success = True
+            success = True
+            error_msg = ""
+        except Exception as e:
+            print(f"❌ Dashboard step failed: {e}")
+            logger.exception("Dashboard pipeline failed")
+            extra["dashboard_error"] = str(e)
+            error_msg = str(e)
+    else:
+        print("❌ No valid SQL generated; skipping dashboard creation.")
+        logger.error("No valid SQL generated; skipping dashboard creation.")
+        error_msg = "No valid SQL generated"
 
-    #     except Exception as e:
-    #         print(f"❌ Dashboard step failed: {e}")
-    #         logger.exception("Dashboard pipeline failed")
-    #         extra["dashboard_error"] = str(e)
-    #         error_msg = str(e)
-    # else:
-    #     print("❌ No valid SQL generated; skipping dashboard creation.")
-    #     logger.error("No valid SQL generated; skipping dashboard creation.")
-    #     error_msg = "No valid SQL generated"
-
-    # # one place to record metrics (no undefined 'steps')
-    # try:
-    #     record_metric(
-    #         prompt=req.prompt,
-    #         start_ts=start,
-    #         success=success,
-    #         error_msg=error_msg,
-    #         iterations=len(dedup),
-    #         function_times=fn_times,
-    #     )
-    # except Exception:
-    #     logger.exception("record_metric failed")
+    # one place to record metrics (no undefined 'steps')
+    try:
+        record_metric(
+            prompt=req.prompt,
+            start_ts=start,
+            success=success,
+            error_msg=error_msg,
+            iterations=len(dedup),
+            function_times=fn_times,
+        )
+    except Exception:
+        logger.exception("record_metric failed")
 
     if success:
         return {

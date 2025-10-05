@@ -167,7 +167,7 @@ DEFAULT_SYSTEM_TEXT = (
     "Action Input: {{ \"…\": \"…\" }}\n"
     "Observation: <tool result or ERROR: …>\n"
     "Final Answer: {{ \"results\": [ {{ \"sql\":\"…\", \"viz\":{{ \"type\":\"<barchart|line|piechart|table|stat|gauge>\", \"format\":\"<table|time_series>\", \"title\":\"<short>\" }} }} ] }}\n\n"
-    "------------------------------------------------------------\n"
+   "------------------------------------------------------------\n"
     "SQL LINT CHECKLIST (MANDATORY in Thought line):\n"
     "- CAST=OK → non-aggregate label expressions in SELECT may use ::text for readability; do not require ::text in GROUP BY.\n"
     "- AGG=OK → never cast aggregates.\n"
@@ -239,8 +239,9 @@ DEFAULT_SYSTEM_TEXT = (
     "- If an Observation starts with \"ERROR:\" while executing SQL, apply the Retry Correction Contract above and retry exactly once.\n"
     "- If a tool indicates a cached schema, do not treat it as an error.\n\n"
     "FINAL OUTPUT SHAPE (ENFORCEMENT):\n"
+    "- The user will specify a 'Required chart type' in the input. You MUST use that exact type in viz.type.\n"
     "- On success: one line:\n"
-    "   Final Answer: {{ \"results\": [ {{ \"sql\":\"…\", \"viz\":{{ \"type\":\"...\", \"format\":\"...\", \"title\":\"...\" }} }} , … ] }}\n"
+    '   Final Answer: {{ "results": [ {{ "sql":"…", "viz":{{ "type":"<EXACTLY as specified>", "format":"...", "title":"..." }} }} , … ] }}\n'
     "- The number of items in \"results\" must equal N.\n"
     "- On error: one line:\n"
     "   Final Answer: {{ \"error\":\"… clear message …\" }}\n"
@@ -446,7 +447,7 @@ def _has_metric(phrase: str) -> bool:
         return True
     if re.search(r"\bsales?\b", p):  # treat "sales" itself as a metric-like target
         return True
-    return bool(re.search(r"\b(sum|total|count|number|avg|average|mean|median|max|min)\b", p))
+    return bool(re.search(r"\b(sum|total|count|number|avg|average|mean|median|max|min|maximum|minimum)\b", p))
 
 
 def _guess_grouping(phrase: str) -> Optional[str]:
@@ -783,179 +784,6 @@ class ToolAliasPassthrough(BaseTool):
         print(f"[ToolAliasPassthrough] Calling {self.target_tool.name} with input: {_short(ti)}")
         return await self.target_tool.arun(tool_input=ti)
 
-def generate_dashboard_with_ollama(
-    sqls: List[str],
-    chart_types: List[str],
-    titles: List[str],
-    dashboard_title: str,
-    time_from: str = "now-5y",
-    time_to: str = "now"
-) -> dict:
-    """
-    Given lists of SQLs, chart types, and panel titles, asks Ollama to assemble a full Grafana dashboard JSON.
-    Works with plain Ollama /api/chat (e.g., llama3.1:8b). Returns the parsed dashboard dict.
-    """
-
-    # Build panel specs for the prompt (LLM must not change SQL)
-    panels = []
-    for sql, ctype, title in zip(sqls, chart_types, titles):
-        # Grafana format hint
-        fmt = "table" if (ctype or "").lower() in ("barchart", "piechart", "table", "stat", "gauge") else "time_series"
-        panels.append({
-            "title": title,
-            "type": (ctype or "table"),
-            "format": fmt,
-            "rawSql": sql,
-        })
-    # Create the JSON schema for the LLM to follow
-    ts = now_timestamp()
-    json_schema = {
-        "dashboard": {
-            "title": f"String with timestamp - {ts}",
-            "schemaVersion": 36,
-            "version": 1,
-            "refresh": "5s",
-            "time": {"from": "now-5y", "to": "now"},
-            "timepicker": {
-                "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"],
-                "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d", "90d", "6M", "1y", "5y"]
-            },
-            "panels": [
-                {
-                    "id": "Integer - Panel ID",
-                    "type": "String - Panel type (barchart, piechart, table, timeseries, stat)",
-                    "title": "String - Panel title",
-                    "datasource": {"type": "postgres", "uid": "feyd4obe5zb40b"},
-                    "targets": [
-                        {
-                            "refId": "A",
-                            "format": "String - time_series or table",
-                            "rawSql": "String - PostgreSQL query"
-                        }
-                    ],
-                    "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
-                    "options": {
-                        "tooltip": {"mode": "single"},
-                        "legend": {"displayMode": "list", "placement": "bottom"},
-                        "reduceOptions": {
-                            "calcs": ["lastNotNull"],
-                            "fields": "",
-                            "values": True
-                        }
-                    }
-                }
-            ]
-        },
-        "overwrite": False
-    }
-    # System instructions kept lean and JSON-only
-    system_msg = (
-        "You are an expert in Grafana dashboard JSON (schemaVersion 36). "
-        "Return EXACTLY one JSON object, no prose, no code fences. "
-        "OUTPUT  JSON SCHEMA SHAPE TO FOLLOW (MANDATORY):\n"
-        + json.dumps(json_schema, indent=2) + "\n"
-        "PANEL JSON (MANDATORY — must match Grafana HTTP API expectations):\n"
-        "- Each item in dashboard.panels[] MUST include:\n"
-        "  id (int), gridPos {x,y,w,h}, title (str), type (str), targets [ {refId, rawSql, format} ]\n"
-        "- Do NOT put rawSql at the panel root; it MUST be inside targets[0].\n"
-        "- Example (single panel):\n"
-        "{\n"
-        '  "id": 0,\n'
-        '  "title": "Panel Title",\n'
-        '  "type": "stat",\n'
-        '  "gridPos": {"x":0,"y":0,"w":12,"h":8},\n'
-        '  "targets": [ {"refId":"A","rawSql":"SELECT 1","format":"table"} ]\n'
-        "}\n"
-        "LAYOUT (24-col grid):\n"
-        "- Two panels per row: w=12, h=8; x=0 (left) or x=12 (right); y increases by 8 each row.\n"
-        "- If N is odd, make the last panel full-width: w=24, x=0.\n"
-        "Algorithm for panel i (0-based), total N:\n"
-        "  if i == N-1 and N % 2 == 1:  x=0; y=(i//2)*8; w=24; h=8\n"
-        "  else if i % 2 == 0:          x=0; y=(i//2)*8; w=12; h=8\n"
-        "  else:                        x=12; y=(i//2)*8; w=12; h=8\n"
-        "TARGETS:\n"
-        "- For each panel create targets[0] = {\"refId\":\"A\",\"rawSql\":\"<SQL>\",\"format\":\"table|time_series\"}.\n"
-        "- Use the SQL from the user message verbatim.\n"
-        "STRICT JSON RULES:\n"
-        "- Double quotes for all keys/strings; no trailing commas; no extra top-level keys; "
-        "no additional quoting of values (use the value as-is)."
-        "TITLE RULE:\n"
-        "- Set dashboard.title EXACTLY to the provided 'dashboard_title' from the user message. Do not invent or copy the prompt.\n"
-
-    )
-    
-    
-    user_msg = json.dumps({
-        "dashboard_title": dashboard_title,
-        "time_from": time_from,
-        "time_to": time_to,
-        "panels": panels
-    }, ensure_ascii=False, indent=2)
-
-    # Ask Ollama (chat API)
-    
-    payload = {
-        "model": os.getenv("OLLAMA_MODEL", "llama3.1:8b"),
-        "messages": [
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg},
-        ],
-        "format": "json",
-        "options": {
-            "temperature": 0.0,
-            "top_p": 1.0,
-            "num_predict": 4096,
-            "num_ctx": 8192,
-            "seed": 42
-        },
-        "keep_alive": "10m",
-        "stream": False
-    }
-
-
-    resp = requests.post(OLLAMA_HTTP_URL, json=payload, timeout=OLLAMA_TIMEOUT)
-    resp.raise_for_status()
-
-    # Ollama chat returns either a single message or streaming;
-    # in non-streaming, we get {"message":{"content": "..."}}
-    try:
-        data = resp.json()
-        if "message" in data and "content" in data["message"]:
-            raw = data["message"]["content"].strip()
-        elif "choices" in data and data["choices"]:
-            raw = (data["choices"][0]["message"]["content"] or "").strip()
-        else:
-            raw = (data.get("content") or "").strip()
-    except json.JSONDecodeError:
-        # Fallback for NDJSON streaming
-        raw_chunks = []
-        for line in resp.text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            msg = (obj.get("message") or {}).get("content")
-            if isinstance(msg, str):
-                raw_chunks.append(msg)
-        raw = "".join(raw_chunks).strip()
-
-    cleaned = _remove_code_fences(raw)
-    # Some models prepend 'json' as a tag line
-    if cleaned.lower().startswith("json\n"):
-        cleaned = cleaned.split("\n", 1)[1].strip()
-    
-    # Try direct parse first
-    try:
-        dashboard = json.loads(cleaned)
-        
-    except Exception as e:
-        print(f"⚠️ Could not parse Ollama JSON: {cleaned}")       
-        raise RuntimeError(f"Ollama returned invalid JSON: {e}. Snippet: {cleaned}")
-    
-    return dashboard
 
 
 def validate_with_pydantic(data: dict) -> Tuple[bool, str, Optional[DashboardSpec]]:
@@ -1201,6 +1029,9 @@ def create_grafana_dashboard(request: Any) -> Dict[str, Any]:
         "table": "table",
         "scatter plot": "scatter",
         "area chart": "timeseries",
+        "stat":"stat",
+        "gauge":"gauge",
+        "timeseries": "timeseries",
     }
     # Map panel types to Grafana target formats.  Grafana
     # distinguishes between ``time_series`` (for timeseries panels)
@@ -1212,6 +1043,8 @@ def create_grafana_dashboard(request: Any) -> Dict[str, Any]:
         "piechart": "table",
         "table": "table",
         "scatter": "table",
+        "stat": "table",
+        "gauge": "table",
     }
 
     # Determine the number of reports.  If the caller supplies
@@ -1327,8 +1160,9 @@ def create_grafana_dashboard(request: Any) -> Dict[str, Any]:
     # Build the final dashboard definition.  Use request.title if
     # available; otherwise construct a default title.  Append the
     # current time to ensure uniqueness.
+    ts = now_timestamp()
     dashboard_title_base = getattr(request, "title", "Generated Dashboard") or "Generated Dashboard"
-    dashboard_title = dashboard_title_base + datetime.now().strftime("%H:%M:%S")
+    dashboard_title = dashboard_title_base[:85] + ts
     dashboard: Dict[str, Any] = {
         "dashboard": {
             "title": dashboard_title,
@@ -1403,6 +1237,7 @@ async def ask_sql(req: PromptRequest):
     if not system_text:
         return {"status":"error","timestamp":ts,"summary":"Final Answer: " + json.dumps({"error":"Missing system_text"})}
     print(f"🧠 [ask_sql] Received prompt: {_short(raw_input)}")
+    logger.info(f"🧠 [ask_sql] Received prompt: {_short(raw_input)}")
     user_input = normalize_synonyms(raw_input)
     # intents = extract_intents_from_prompt(user_input)
     try:
@@ -1423,6 +1258,11 @@ async def ask_sql(req: PromptRequest):
     tasks = []
     for intent in intents:
         intent_text = intent.get("note") or intent.get("title") or ""
+        intent_input  = (
+            f"{intent_text}\n"
+            f"Required chart type: {intent.get('chart_type', 'table')}\n"
+            f"Title: {intent.get('title', 'Result')}"
+        )
         print(f"[ask_sql] Launching agent for intent: {intent_text}")
         logger.info(f"[ask_sql] Launching agent for intent: {intent_text}")
         # Fresh guards per agent (so memo/caches are per-run)
@@ -1485,7 +1325,7 @@ async def ask_sql(req: PromptRequest):
         tasks.append(
             asyncio.create_task(
                 executor.ainvoke({
-                    "input": intent_text,                           # the user’s specific intent (e.g., “sum sales by product as bar chart”)
+                    "input": intent_input,                           # the user’s specific intent (e.g., “sum sales by product as bar chart”)
                     "tools": "\n".join(f"- {t.name}" for t in agent_tools),  # rendered into the prompt for the LLM to see
                     "tool_names": ", ".join(t.name for t in agent_tools),     # same, compact form
                     "format_instructions": FORMAT_INSTRUCTIONS      # reminds LLM of the exact JSON shape for Final Answer
@@ -1493,8 +1333,6 @@ async def ask_sql(req: PromptRequest):
             )
         )
 
-
-        
                                                
     print(f"[ask_sql] Launched {len(tasks)} agents concurrently")
     logger.info(f"[ask_sql] Launched {len(tasks)} agents concurrently")
@@ -1539,7 +1377,6 @@ async def ask_sql(req: PromptRequest):
             seen.add(fp); 
             dedup.append(r)
     dedup = dedup[:N]
-    
     seen_title = { (r.get("viz") or {}).get("title") or r.get("title") for r in dedup if (r.get("viz") or {}).get("title") or r.get("title") }
     
     short_title =  ", ".join(seen_title) 
@@ -1548,11 +1385,8 @@ async def ask_sql(req: PromptRequest):
     final_answer = {"results": dedup}
     sql_preview = ";\n".join([r["sql"] for r in dedup])
     logger.info(f"[/ASK] Final SQL preview:\n {sql_preview}")
-    print("📝 Final Answer SQL preview:")
-    print(sql_preview[:200] + ("..." if len(sql_preview) > 200 else ""))
 
-    print(f"📝 Building dashboard JSON with {len(dedup)} panels (Ollama) + validate + push...")
-        # --- NEW: execute final deduped SQLs and include normalized previews ---
+    # --- NEW: execute final deduped SQLs and include normalized previews ---
     exec_inner = app.state.exec_guard.inner_tool  # HttpExecute()
     exec_guard_for_final = ExecuteQueryGuard(inner_tool=exec_inner)  # reuse normalizer/logging
     exec_outputs = []
@@ -1606,37 +1440,12 @@ async def ask_sql(req: PromptRequest):
 
     if dedup:  # we have at least one SQL/panel
         try:
-            # sqls = [r["sql"] for r in dedup]
-            # chart_types = [(r.get("viz") or {}).get("type", "table") for r in dedup]
-            # titles = [(r.get("viz") or {}).get("title", "Panel") for r in dedup]
-
-            # short_title = f"{short_title[:85]} — {ts}"
-            # logger.info(f"[/ASK] Generating dashboard with title: {short_title}")
-
-            # dashboard_obj = time_call(
-            #     fn_times,
-            #     "ollama_generate",
-            #     generate_dashboard_with_ollama,
-            #     sqls=sqls,
-            #     chart_types=chart_types,
-            #     titles=titles,
-            #     dashboard_title=short_title,
-            #     time_from="now-5y",
-            #     time_to="now",
-            # )
             
             # Each deduped result already has a 'sql' and a 'viz' dictionary.
             sql_data = [{"sql": r["sql"], "viz": r.get("viz", {})} for r in dedup]
             logger.info(f"[/ASK] SQL data for dashboard generation: {_short(sql_data, 1000)}")
             # Build a simple request object for the new dashboard function.
-            # request_obj = types.SimpleNamespace(
-            #     sql=sql_data,
-            #     title=short_title,                     # Use your composed dashboard title
-            #     grafana_url=os.getenv("GRAFANA_URL"),  # URL of your Grafana instance
-            #     headers={"Content-Type": "application/json"},
-            #     num_reports=len(sql_data)              # Number of panels to lay out
-            # )
-            
+                        
             request_obj = types.SimpleNamespace(
                 sql=sql_data,
                 title=short_title,

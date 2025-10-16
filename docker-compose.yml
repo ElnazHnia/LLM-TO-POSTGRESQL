@@ -9,6 +9,33 @@ services:
     networks:
       - llm-docker-setup_default
     restart: always
+  
+  qdrant:
+    image: qdrant/qdrant:latest
+    build:
+      context: .
+      dockerfile: src/Dockerfile.qdrant
+    container_name: qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"   # HTTP / REST API
+      - "6334:6334"   # gRPC (optional)
+    volumes:
+      - qdrant_data:/qdrant/storage
+      # Optionally mount config
+      # - ./qdrant_config.yaml:/qdrant/config/production.yaml
+    environment:
+      # Example settings (can override via env vars)
+      - QDRANT__LOG_LEVEL=INFO
+      # You may add API key env var if you want auth
+      # - QDRANT__SERVICE__API_KEY=some_secret_key
+    networks:
+      - llm-docker-setup_default
+    healthcheck:
+      test: ["CMD-SHELL", "python3 - << 'PY'\nimport socket,sys\ns=socket.socket(); s.settimeout(1)\ntry:\n  s.connect(('127.0.0.1', 6333)); sys.exit(0)\nexcept Exception:\n  sys.exit(1)\nPY"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
 
 
   postgres:
@@ -74,8 +101,11 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy 
       ollama:
         condition: service_started
+      
     environment:
       APP_MODULE: src.llm_api:app
       PYTHONUNBUFFERED: "1"
@@ -93,6 +123,7 @@ services:
       --host 0.0.0.0 --port 8000
     volumes:
       - .:/app
+      - ./data/questions.xlsx:/data/questions.xlsx:ro
       - ${HOME}/.ollama:/root/.ollama:ro
       - ./logs:/app/logs
       
@@ -131,7 +162,8 @@ volumes:
   ollama:
   postgres_data:
   minio_data:
-
+  qdrant_data:
+  
 networks:
   llm-docker-setup_default:
     name: llm-docker-setup_default

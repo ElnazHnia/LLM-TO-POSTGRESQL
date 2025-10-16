@@ -390,6 +390,69 @@ def get_schema(table_name: str):
     except Exception as e:
         logger.info(f"[FASTAPIMCP] EXCEPTION IN GET SCHEMA: {e}")
         return {"error": str(e)}
+    
+# @app.get("/schema/{table_name}", operation_id="sql.schema")
+# def get_schema(table_name: str):
+#     logger.info(f"[FASTAPIMCP] GET SCHEMA for {table_name}")
+#     try:
+#         # serve from cache if fresh
+#         now = time.time()
+#         if (table_name in _schema_cache_cols
+#             and (now - _schema_cache_at.get(table_name, 0.0)) < SCHEMA_TTL_SECS):
+#             cols = _schema_cache_cols[table_name]
+#             logger.info(f"[FASTAPIMCP] Returning cached schema for {table_name}")
+#             return {
+#                 "schema": [f"{c} (cached)" for c in cols],  # ✅ Fixed: iterate cols
+#                 "columns": cols,
+#                 "cached": True
+#             }
+
+#         conn = get_connection()
+#         try:
+#             cur = conn.cursor()
+#             cur.execute("""
+#                 SELECT column_name, data_type
+#                 FROM information_schema.columns
+#                 WHERE table_schema='public' AND table_name = %s
+#                 ORDER BY ordinal_position
+#             """, (table_name,))
+#             rows = cur.fetchall()
+#             cur.close()
+            
+#             if not rows:
+#                 logger.warning(f"[FASTAPIMCP] UNKNOWN TABLE: {table_name}")
+#                 return {
+#                     "error": f"Unknown table '{table_name}'.",
+#                     "schema": [],
+#                     "columns": [],
+#                     "cached": False
+#                 }
+
+#             schema = [f"{col} ({dtype})" for col, dtype in rows]
+#             cols = [col for col, _dtype in rows]
+
+#             # update cache
+#             _schema_cache_cols[table_name] = cols
+#             _schema_cache_at[table_name] = now
+#             logger.info(f"[FASTAPIMCP] CACHED SCHEMA for {table_name}: {schema}")
+            
+#             return {
+#                 "schema": schema,
+#                 "columns": cols,
+#                 "cached": False
+#             }
+#         finally:
+#             conn.close()  # ✅ Ensure connection is closed
+            
+#     except Exception as e:
+#         logger.error(f"[FASTAPIMCP] EXCEPTION IN GET SCHEMA for {table_name}: {e}", exc_info=True)
+#         # ✅ Return proper error response
+#         return {
+#             "error": f"Failed to fetch schema for '{table_name}': {str(e)}",
+#             "schema": [],
+#             "columns": [],
+#             "cached": False
+#         }
 
 
 @app.get("/example/{table_name}", operation_id="sql.example")

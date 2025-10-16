@@ -1,59 +1,44 @@
 # Web framework
 fastapi
 uvicorn
+python-multipart
 
-# HTTP requests & env
+# HTTP & env
 requests
 python-dotenv
+aiohttp
+websockets
+asyncio
 
-# Database connection
+# Database
 psycopg2-binary
-
-# Date parsing
 dateparser
 
-# MLflow logging
+# MLflow
 mlflow
 
-# Vector database
-qdrant-client
+# Vector / embeddings  (pick ONE approach)
+qdrant-client>=1.9.0
+torch>=2.2,<3
+sentence-transformers>=2.7
+huggingface-hub>=0.23
+safetensors>=0.4
+# OR: qdrant-client[fastembed]>=1.9.0
 
-# Embedding models
-sentence-transformers
-
-# SQL linter/fixer
+# SQL / templating
 sqlfluff==3.3.1
-
-# Templating
 jinja2
+openpyxl
+pyyaml
+jsonschema
 
-# MCP & LangChain adapters
-fastapi-mcp
-
-
-# Core LLM toolkit
-#langchain>=0.0.300
-
-# Existing requirements
-fastapi
-pydantic
-requests
-python-multipart
-uvicorn
-
-# Enhanced MCP and LangChain integration
-langchain-ollama>=0.1.0
-langchain-mcp-adapters>=0.1.0
-langgraph>=0.2.0
+# LangChain + MCP
 langchain>=0.1.0
 langchain-core>=0.1.0
 langchain-community>=0.0.20
+langchain-ollama>=0.1.0
+langchain-mcp-adapters>=0.1.0
+langgraph>=0.2.0
 
-# Additional dependencies for tool orchestration
-asyncio
-aiohttp
-websockets
-
-# Optional: For better JSON parsing and validation
-jsonschema
-pyyaml
+# MCP API wrapper
+fastapi-mcp

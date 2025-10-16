@@ -8,7 +8,11 @@ from contextlib import suppress
 from src.metrics import record_metric, time_call
 from src.models import DashboardSpec
 from collections.abc import Iterable
-
+import pandas as pd
+import requests
+from qdrant_client import QdrantClient
+from qdrant_client.models import PointStruct, VectorParams, Distance
+from sentence_transformers import SentenceTransformer
 # ----------------------------
 # Logging
 # ----------------------------
@@ -94,6 +98,78 @@ OLLAMA_HTTP_URL = os.getenv("OLLAMA_HTTP_URL") or f"{OLLAMA_BASE_URL.rstrip('/')
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_JSON_TIMEOUT") or os.getenv("OLLAMA_TIMEOUT", "300"))
 MCP_URL = os.getenv("MCP_URL", "http://mcp_server:8000")
 MAX_PANELS = int(os.getenv("MAX_PANELS", "10"))
+EXCEL_PATH = os.getenv("EXCEL_PATH", "/data/questions.xlsx")
+
+def init_qdrant_retries(url: str, attempts: int = 5, delay: float = 2.0):
+    for i in range(attempts):
+        try:
+            client = QdrantClient(url=url)
+            return client
+        except Exception as e:
+            logger.warning(f"[RAG] Qdrant init attempt {i} failed: {e}")
+            time.sleep(delay)
+    # Last attempt (will raise error)
+    return QdrantClient(url=url)
+
+def get_table_schema(table_name: str) -> str:
+    try:
+        r = requests.get(f"{MCP_URL}/schema/{table_name}", timeout=5)
+        r.raise_for_status()
+        data = r.json()
+        # Depending on response shape from MCP:
+        if isinstance(data, dict) and "schema" in data:
+            cols = data["schema"]
+            return "Columns: " + ", ".join(cols)
+        else:
+            return data.get("error", "")
+    except Exception as e:
+        return f"Error fetching schema for {table_name}: {e}"
+
+def get_table_example(table_name: str) -> dict:
+    try:
+        r = requests.get(f"{MCP_URL}/example/{table_name}", timeout=5)
+        r.raise_for_status()
+        data = r.json()
+        if isinstance(data, dict) and "example" in data:
+            return data.get("example", {})
+        else:
+            return {}
+    except Exception as e:
+        return {}
+
+# ----------------------------
+# Question loading 
+# ----------------------------       
+def load_questions(file_path: str) -> List[Dict[str, Any]]:
+    """Read questions from an Excel file and filter rows marked for processing.
+
+    The spreadsheet is expected to contain columns named ``index``,
+    ``Question`` and ``Use Detailed System Prompt Examples``.  A row is
+    eligible if the latter column contains the string ``yes`` (case
+    insensitive).  The returned list contains dictionaries with ``index`` and
+    ``question`` keys for each eligible row.
+    """
+    df = pd.read_excel(file_path)
+    required_cols = {"index", "Question", "Use Detailed System Prompt Examples"}
+    if not required_cols.issubset(df.columns):
+        missing = required_cols - set(df.columns)
+        raise KeyError(f"Missing expected columns in {file_path}: {', '.join(missing)}")
+    tasks: List[Dict[str, Any]] = []
+    for _, row in df.iterrows():
+        use_examples = str(row.get("Use Detailed System Prompt Examples", "")).strip().lower()
+        if use_examples == "no":
+            idx = str(row.get("index", "")).strip()
+            question = str(row.get("Question", "")).strip()
+            if question:
+                tasks.append({"index": idx, "question": question})
+        # else:
+        #     idx = str(row.get("index", "")).strip()
+        #     question = str(row.get("Question", "")).strip()
+        #     if question:
+        #         tasks.append({"index": idx, "question": question})
+                
+    print(f"DEBUG: Loaded {len(tasks)} tasks from {file_path}")
+    return tasks
 
 # ----------------------------
 # HTTP MCP client tools
@@ -142,10 +218,7 @@ DEFAULT_SYSTEM_TEXT = (
     "- Aliases (e.g., AS city) are for display only; do not use them in GROUP BY/HAVING.\n\n"
     "TIME GROUPING (HARD RULE):\n"
     "- Never reference a bare column named \"year\".\n"
-    "- If you need yearly grouping, derive a label and reuse it:\n"
-    "SELECT date_trunc('year', s.sale_date) AS year, SUM(s.value) AS total\n"
-    "FROM sales s\n"
-    "GROUP BY date_trunc('year', s.sale_date)\n"
+    "- If you need yearly grouping, derive a label and reuse it.\n"
     "- For monthly/weekly/daily, use date_trunc('month'|'week'|'day') similarly.\n"
     "- GROUP BY the original expression (e.g., GROUP BY date_trunc('year', s.sale_date)).\n"
     "FORMAT HARD RULE:\n"
@@ -191,23 +264,12 @@ DEFAULT_SYSTEM_TEXT = (
     "- EXTRA=NO → there are no auxiliary/duplicate queries for the same intent.\n\n"
     "SELECT COLUMN POLICY (HUMAN-FRIENDLY OUTPUT) — HARD REQUIREMENT:\n"
     "- Do NOT select raw primary key or foreign key columns (named \"id\" or ending with \"_id\") in SELECT.\n"
-    "- JOIN to referenced tables and select a human-readable field with ::text and a clear alias:\n"
-    " s.person_id → FROM sales s JOIN person pe ON s.person_id=pe.id → pe.name::text AS person_name\n" 
-    " s.product_id → FROM sales s JOIN products pr ON s.product_id=pr.id → pr.name::text AS product_name\n" 
-    " o.customer_id → FROM orders o JOIN person p ON o.customer_id=p.id → p.name::text AS customer_name\n" 
-    " o.deliverer_id → FROM orders o JOIN person p ON o.deliverer_id=p.id → p.name::text AS deliverer_name\n" 
-    " s.payment_id → FROM sales s JOIN paymenttype pt ON s.payment_id=pt.id → pt.method::text AS payment_type_method\n\n"
+    "- JOIN to referenced tables and select a human-readable field with ::text and a clear alias.\n"
     "TABLE VIEW POLICY (HARD RULE):\n"
     "1. NEVER use SELECT *.\n"
     "2. When listing all information for a sales record, you MUST replace foreign key IDs with human-readable names using LEFT JOINs.\n"
     "3. Specifically, replace 'person_id' with 'name' from 'person' table (alias person_name), 'product_id' with 'name' from 'products' (alias product_name).\n"
     "4. Select every remaining column from main table explicitly, fully qualified (e.g. s.value, s.sale_date).\n"
-    "5. Example:\n"
-    "   SELECT s.sale_date, s.value, pr.name AS product_name, pe.name AS person_name, pt.method::text AS payment_type_method\n"
-    "   FROM sales s\n"
-    "   LEFT JOIN products pr ON s.product_id = pr.id\n"
-    "   LEFT JOIN person pe ON s.person_id = pe.id\n"
-    "   LEFT JOIN paymenttype pt ON s.payment_id = pt.id\n\n"
     "BAR/PIE CHART POLICY (HARD REQUIREMENT):\n"
     "- SELECT must include exactly one non-aggregate dimension = the user-requested grouping (e.g. product_name for “per products”).\n"
     "- GROUP BY must use that same dimension (via original expression or alias).\n"
@@ -215,12 +277,12 @@ DEFAULT_SYSTEM_TEXT = (
     "- Do not substitute another dimension or metric during repair.\n\n"
     "DIMENSION CANONICALIZATION (PK) — HARD RULE:\n"
     "- Do NOT select raw primary key (e.g. o.id, s.id, p.id) in non-agretation columns in SELECT, GROUP BY and ORDER BY.\n\n"
+    " s.person_id → FROM sales s JOIN person pe ON s.person_id=pe.id → pe.name::text AS person_name\n" 
+    " s.product_id → FROM sales s JOIN products pr ON s.product_id=pr.id → pr.name::text AS product_name\n" 
+    " o.customer_id → FROM orders o JOIN person p ON o.customer_id=p.id → p.name::text AS customer_name\n" 
+    " o.deliverer_id → FROM orders o JOIN person p ON o.deliverer_id=p.id → p.name::text AS deliverer_name\n" 
+    " s.payment_id → FROM sales s JOIN paymenttype pt ON s.payment_id=pt.id → pt.method::text AS payment_type_method\n\n"		
     "DIMENSION CANONICALIZATION (FK→LABEL) — HARD RULE:\n"
-    "- If the requested dimension is “products”:\n"
-    "   SELECT pr.name::text AS product_name, AVG(s.value) AS avg_value\n"
-    "   FROM sales s\n"
-    "   LEFT JOIN products pr ON s.product_id = pr.id\n"
-    "   GROUP BY pr.name\n"
     "- For persons, payments, etc., follow the same pattern: always replace *_id with the human-readable name in both SELECT and GROUP BY.\n\n"
     "RETRY CORRECTION CONTRACT (HARD RULES):\n"
     "- LOCK the intent’s metric and dimension after the first draft SQL.\n"
@@ -707,28 +769,60 @@ class ExecuteQueryGuard(BaseTool):
                         "data_preview": [{"text": obj}],
                     }
 
+            # if isinstance(obj, dict) and "columns" in obj and "rows" in obj and isinstance(obj["rows"], list):
+            #     cols = obj.get("columns") or []
+            #     rows = obj.get("rows") or []
+            #     preview = []
+            #     for r in rows[: self.PREVIEW_LIMIT]:
+            #         if isinstance(r, dict):
+            #             preview.append(r)
+            #         elif isinstance(r, list):
+            #             preview.append({c: r[i] if i < len(r) else None for i, c in enumerate(cols)})
+            #         else:
+            #             preview.append({"value": r})
+            #     return {
+            #         "status": obj.get("status", "ok"),
+            #         "columns": cols,
+            #         "rows": len(rows),
+            #         "data_preview": preview,
+            #     }
+
+            # if isinstance(obj, list) and (not obj or isinstance(obj[0], dict)):
+            #     cols = list(obj[0].keys()) if obj else []
+            #     return {
+            #         "status": "ok",
+            #         "columns": cols,
+            #         "rows": len(obj),
+            #         "data_preview": obj[: self.PREVIEW_LIMIT],
+            #     }
             if isinstance(obj, dict) and "columns" in obj and "rows" in obj and isinstance(obj["rows"], list):
                 cols = obj.get("columns") or []
                 rows = obj.get("rows") or []
                 preview = []
+                has_error = False
                 for r in rows[: self.PREVIEW_LIMIT]:
                     if isinstance(r, dict):
                         preview.append(r)
+                        # mark if tool surfaced an error row
+                        if "error" in r or (isinstance(r.get("text"), str) and r["text"].startswith("ERROR:")):
+                            has_error = True
                     elif isinstance(r, list):
                         preview.append({c: r[i] if i < len(r) else None for i, c in enumerate(cols)})
                     else:
                         preview.append({"value": r})
                 return {
-                    "status": obj.get("status", "ok"),
+                    "status": "error" if has_error else obj.get("status", "ok"),
                     "columns": cols,
                     "rows": len(rows),
                     "data_preview": preview,
                 }
 
+            # If we get a simple list of dicts, still check for an 'error' key
             if isinstance(obj, list) and (not obj or isinstance(obj[0], dict)):
                 cols = list(obj[0].keys()) if obj else []
+                has_error = any(isinstance(r, dict) and "error" in r for r in obj)
                 return {
-                    "status": "ok",
+                    "status": "error" if has_error else "ok",
                     "columns": cols,
                     "rows": len(obj),
                     "data_preview": obj[: self.PREVIEW_LIMIT],
@@ -1216,9 +1310,73 @@ async def startup_event():
         "sql.schema": schema_guard,
         "sql.query": exec_guard,
     }
-    
-    logger.info("[STARTUP] LLM and guards ready")
-    print("[STARTUP] LLM and guards ready")
+    # ---------- RAG/Qdrant: init ----------
+    try:
+        qdrant_url = os.getenv("QDRANT_URL", "http://qdrant:6333")
+        try:
+            qdr = init_qdrant_retries(qdrant_url, attempts=6, delay=3.0)
+            app.state.qdrant = qdr
+            logger.info(f"[RAG] Qdrant client ready: {qdrant_url}")
+            # further setup (collection creation, ingestion) …
+        except Exception as e:
+            logger.exception(f"[RAG] Qdrant init failed finally: {e}")
+            app.state.qdrant = None
+            app.state.embedder = None
+        qdrant = QdrantClient(url=qdrant_url)
+        embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        dim = embedder.get_sentence_embedding_dimension()
+        collection = os.getenv("QDRANT_COLLECTION", "table_knowledge")
+
+        if not qdrant.collection_exists(collection):
+            qdrant.create_collection(
+                collection_name=collection,
+                vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+            )
+
+        app.state.qdrant = qdrant
+        app.state.embedder = embedder
+        app.state.qdrant_collection = collection
+        logger.info(f"[RAG] Qdrant ready at {qdrant_url}, collection={collection}, dim={dim}")
+    except Exception as e:
+        logger.exception(f"[RAG] Qdrant init failed: {e}")
+        app.state.qdrant = None
+        app.state.embedder = None
+
+    # ---------- RAG/Qdrant: one-time ingestion (optional) ----------
+    if app.state.qdrant and app.state.embedder and os.getenv("RAG_INGEST", "1") in ("1","true","True","YES","yes"):
+        try:
+            tables_resp = requests.get(f"{MCP_URL}/tables", timeout=10)
+            tables_resp.raise_for_status()
+            table_names = tables_resp.json() if isinstance(tables_resp.json(), list) else []
+        except Exception as e:
+            logger.error(f"[RAG] Failed to fetch table list from MCP: {e}")
+            table_names = []
+
+        knowledge_texts = []
+        for tname in table_names:
+            schema_info = get_table_schema(tname)      # text
+            example_row = get_table_example(tname)     # dict or {}
+            if isinstance(example_row, dict) and example_row:
+                ex = ", ".join(f"{k}={v}" for k, v in example_row.items())
+                example_text = f" | Example: {ex}"
+            else:
+                example_text = ""
+            knowledge_texts.append(f"Table {tname}: {schema_info}{example_text}")
+
+        if knowledge_texts:
+            vectors = app.state.embedder.encode(knowledge_texts)
+            points = [
+                PointStruct(id=i, vector=v.tolist() if hasattr(v, "tolist") else list(v),
+                            payload={"text": knowledge_texts[i], "table": table_names[i] if i < len(table_names) else None})
+                for i, v in enumerate(vectors)
+            ]
+            try:
+                app.state.qdrant.upsert(collection_name=app.state.qdrant_collection, points=points)
+                logger.info(f"[RAG] Ingested {len(points)} knowledge items into Qdrant.")
+            except Exception as e:
+                logger.exception(f"[RAG] Upsert to Qdrant failed: {e}")
+        else:
+            logger.warning("[RAG] No knowledge texts to ingest.")
 # ----------------------------
 # /ask endpoint: per-intent ReAct agents
 # ----------------------------
@@ -1228,6 +1386,7 @@ async def ask_sql(req: PromptRequest):
     start = time.perf_counter()
     
     raw_input = (req.prompt or "").strip()
+    id_input = "0"
     if not raw_input:
         return {"status": "error", "timestamp": ts, "summary": "Final Answer: " + json.dumps({"error":"Empty prompt"})}
     
@@ -1236,307 +1395,372 @@ async def ask_sql(req: PromptRequest):
     
     if not system_text:
         return {"status":"error","timestamp":ts,"summary":"Final Answer: " + json.dumps({"error":"Missing system_text"})}
-    print(f"🧠 [ask_sql] Received prompt: {_short(raw_input)}")
-    logger.info(f"🧠 [ask_sql] Received prompt: {_short(raw_input)}")
-    user_input = normalize_synonyms(raw_input)
-    # intents = extract_intents_from_prompt(user_input)
-    try:
-        intents = llm_extract_intents_ollama_http(user_input)
-        print(f"[ask_sql] LLM extracted {len(intents)} intents")    
-    except Exception:
-        intents = extract_intents_from_prompt(user_input)  
-        print(f"[ask_sql] Fallback extracted {len(intents)} intents")
-
-    N = len(intents)
-    if N == 0:
-        return {"status":"error","timestamp":ts,"summary":"Final Answer: " + json.dumps({"error":"No intents found."})}
-    if N > MAX_PANELS:
-        return {"status":"error","timestamp":ts,"summary":"Final Answer: " + json.dumps({"error":f"Requested {N} charts exceeds MAX_PANELS={MAX_PANELS}."})}
-    logger.info(f"[ask_sql] {N} intents extracted: {[_short(i) for i in intents]}")
-    print(f"[ask_sql] {N} intents extracted: {[_short(i) for i in intents]}")
-    # Run one agent per intent concurrently
-    tasks = []
-    for intent in intents:
-        intent_text = intent.get("note") or intent.get("title") or ""
-        intent_input  = (
-            f"{intent_text}\n"
-            f"Required chart type: {intent.get('chart_type', 'table')}\n"
-            f"Title: {intent.get('title', 'Result')}"
-        )
-        print(f"[ask_sql] Launching agent for intent: {intent_text}")
-        logger.info(f"[ask_sql] Launching agent for intent: {intent_text}")
-        # Fresh guards per agent (so memo/caches are per-run)
-        inner_list = app.state.list_guard.inner_tool
-        inner_schema = app.state.schema_guard.inner_tool
-        inner_exec = app.state.exec_guard.inner_tool
-        print(f"[ask_sql] Using inner tools: list={inner_list}, schema={inner_schema}, exec={inner_exec}")
-        logger.info(f"[ask_sql] Using inner tools: list={inner_list}, schema={inner_schema}, exec={inner_exec}")
-        list_guard = ListTablesGuard(inner_tool=inner_list)
-        schema_guard = GetTableSchemaGuard(inner_tool=inner_schema)
-        schema_guard.list_tool = list_guard
-        exec_guard = ExecuteQueryGuard(inner_tool=inner_exec, schema_tool=schema_guard)
-
-        agent_tools = []
-        agent_tools.append(ToolAliasNoInput(name="sql.list_tables", target_tool=list_guard))
-        agent_tools.append(ToolAliasPassthrough(name="sql.schema", target_tool=schema_guard))
-        agent_tools.append(ToolAliasPassthrough(name="sql.query", target_tool=exec_guard))
-        print(f"[ask_sql] Agent tools: {[t.name for t in agent_tools]}")
-        logger.info(f"[ask_sql] Agent tools: {[t.name for t in agent_tools]}")
-        
-        prompt_template = ChatPromptTemplate.from_messages([
-            ("system", system_text),
-            ("system", "{tools}\n\nValid tool names: {tool_names}"),
-            # ("system", "When you produce the Final Answer, follow this JSON schema:\n{format_instructions}"),
-            ("system",
-            "When you finish, emit exactly one line:\n"
-            "Final Answer: {{\"results\": [ {{\"sql\": \"...\", \"viz\": {{\"type\":\"barchart|line|piechart|table|stat|gauge\", \"format\":\"table|time_series\", \"title\":\"...\"}} }} ] }}\n"
-            "No code fences. No extra text. Do not say anything like 'Here is the corrected output:'."),
-            ("human", "{input}\n\n{agent_scratchpad}")
-        ])
-
-        # 1) Build a ReAct agent that can think + call tools
-        agent = create_react_agent(
-            llm=app.state.llm,          # the LLM client you created at startup
-            tools=agent_tools,          # the tools the agent is allowed to use (list_tables, schema, query)
-            prompt=prompt_template      # the rules/format the agent must follow (your system prompt)
-        )
-
-        # 2) Wrap the agent in an executor that runs the ReAct loop safely
-        executor = AgentExecutor.from_agent_and_tools(
-            agent=agent,
-            tools=agent_tools,          # same tools passed through
-            verbose=True,               # print Thought/Action/Observation for debugging
-            max_iterations=12,          # hard stop so it can’t loop forever
-            early_stopping_method="force",  # if it hits the limit, stop immediately
-            handle_parsing_errors=(     # if LLM outputs the wrong shape, tell it how to fix format
-                "Reformat your last message to comply with ReAct:\n"
-                "It must be either:\n"
-                '1) Thought: ...\\nAction: <tool name>\\nAction Input: { ... }\n'
-                "or\n"
-                '2) Final Answer: {"results":[{"sql":"...","viz":{"type":"...","format":"...","title":"..."}}]}\n'
-                "No code fences. No extra text."
-            ),
-        )
-
-        print(f"[ask_sql] Agent created with max_iterations={executor.max_iterations}")
-        logger.info(f"[ask_sql] Agent created with max_iterations={executor.max_iterations}")
-        
-        # 4) Run this agent asynchronously for one intent and collect the task
-        tasks.append(
-            asyncio.create_task(
-                executor.ainvoke({
-                    "input": intent_input,                           # the user’s specific intent (e.g., “sum sales by product as bar chart”)
-                    "tools": "\n".join(f"- {t.name}" for t in agent_tools),  # rendered into the prompt for the LLM to see
-                    "tool_names": ", ".join(t.name for t in agent_tools),     # same, compact form
-                    "format_instructions": FORMAT_INSTRUCTIONS      # reminds LLM of the exact JSON shape for Final Answer
-                })
-            )
-        )
-
-                                               
-    print(f"[ask_sql] Launched {len(tasks)} agents concurrently")
-    logger.info(f"[ask_sql] Launched {len(tasks)} agents concurrently")
-    responses = await asyncio.gather(*tasks, return_exceptions=True)
-
-    results: List[Dict[str, Any]] = []
-    for resp in responses:
-        if isinstance(resp, Exception):
-            logger.error(f"Agent error: {resp}")
-            continue
-
-        output = resp.get("output") if isinstance(resp, dict) else str(resp)
-        if not output:
-            logger.error("Empty agent output")
-            continue
-
-        # fa_obj = _parse_final_answer_obj(output)
-        fa_obj = _parse_any_json(output) 
-        if not isinstance(fa_obj, dict):
-            logger.error(f"Could not parse JSON from agent output: {output[:300]}")
-            continue
-
-        items = fa_obj.get("results", [])
-        if not isinstance(items, list):
-            logger.error("Parse error: 'results' is not a list")
-            continue
-
-        for item in items:
-            norm = _normalize_result_item(item)
-            if norm:
-                results.append(norm)
-
-
-      
-    print(f"[ask_sql] Collected {len(results)} raw results from agents")
-    logger.info(f"[ask_sql] Collected {len(results)} raw results from agents")
-    # Dedupe and cap to N
-    seen=set(); dedup=[]
-    for r in results:
-        fp = _sql_fingerprint(r["sql"])
-        if fp not in seen:
-            seen.add(fp); 
-            dedup.append(r)
-    dedup = dedup[:N]
-    seen_title = { (r.get("viz") or {}).get("title") or r.get("title") for r in dedup if (r.get("viz") or {}).get("title") or r.get("title") }
     
-    short_title =  ", ".join(seen_title) 
-    print(f"🖼️ titles: {short_title}")
-    logger.info(f"[/ASK] Deduped final results:\n {dedup}")
-    final_answer = {"results": dedup}
-    sql_preview = ";\n".join([r["sql"] for r in dedup])
-    logger.info(f"[/ASK] Final SQL preview:\n {sql_preview}")
+    # Load tasks from Excel (if provided)
+    #-------------------------------------------
 
-    # --- NEW: execute final deduped SQLs and include normalized previews ---
-    exec_inner = app.state.exec_guard.inner_tool  # HttpExecute()
-    exec_guard_for_final = ExecuteQueryGuard(inner_tool=exec_inner)  # reuse normalizer/logging
-    exec_outputs = []
     try:
-        for r in dedup:
-                   
-            title = (r.get("viz") or {}).get("title") or "Result"
-            ctype = (r.get("viz") or {}).get("type", "table")
-            fmt   = (r.get("viz") or {}).get("format", "table")
-            title = (r.get("viz") or {}).get("title") or "Result"
-            logger.info(
-                "[/ASK] Executing final:\n title: %s,\n SQL: %s",
-                _short(title, 300),
-                _short(r.get("sql",""), 300),
-            )
-            payload = {
-                "sql": r["sql"],
-                "chart_type": ctype,
-                "format": fmt,
-                "title": title,
-            }
-            raw = await exec_guard_for_final._arun(tool_input=payload)
-            # normalize to dict for response
-            try:
-                norm = json.loads(raw) if isinstance(raw, str) else raw
-                logger.info(f"[/ASK] Final exec raw output: {_short(norm)}")
-            except Exception:
-                norm = {"status": "ok", "columns": [], "rows": 0, "data_preview": [raw]}
-            exec_outputs.append({
-                "sql": r["sql"],
-                "viz": r["viz"],
-                "result": norm,
-            })
-        # mark success if we executed at least one
-        logger.info(
-            "[/ASK] Final exec outputs:\n %s",
-            ", ".join(_short(o, 300) for o in exec_outputs)
-        )
-        success = len(exec_outputs) > 0    
-        error_msg = ""    
-    except Exception as e:
-        logger.exception("Final execution of deduped SQL failed")
-        error_msg = f"Final execution failed: {e}"
-        success = False
-
-    # prepare shared containers
-    extra: Dict[str, Any] = {}
-    fn_times: Dict[str, int] = {}
-    # success = False
-    
-
-    if dedup:  # we have at least one SQL/panel
-        try:
+        if os.path.exists(EXCEL_PATH) and os.path.isfile(EXCEL_PATH):
+            df = pd.read_excel(EXCEL_PATH)
+            print("DEBUG: columns in Excel:", df.columns.tolist())
+            tasks = load_questions(EXCEL_PATH)
+   
             
-            # Each deduped result already has a 'sql' and a 'viz' dictionary.
-            sql_data = [{"sql": r["sql"], "viz": r.get("viz", {})} for r in dedup]
-            logger.info(f"[/ASK] SQL data for dashboard generation: {_short(sql_data, 1000)}")
-            # Build a simple request object for the new dashboard function.
-                        
-            request_obj = types.SimpleNamespace(
-                sql=sql_data,
-                title=short_title,
-                grafana_url="",
-                headers={},
-                num_reports=len(sql_data)
-            )
-            # Generate the dashboard JSON using the new function
-            dashboard_obj = time_call(
-                fn_times,
-                "ollama_generate",
-                create_grafana_dashboard,
-                request=request_obj
-            )
-            logger.info(f"[/ASK] Generated dashboard object: {_short(dashboard_obj, 1000)}")
+            #-------------------------------------------
+            if tasks:
+                logger.info(f"Loaded first task question = {tasks[0]['question']}")
+            else:
+                logger.info("Loaded 0 tasks")
+            logger.info(f"Loaded {len(tasks)} tasks from {EXCEL_PATH}")
 
-            _ensure_panel_formats(dashboard_obj)
-            ok, err, validated = time_call(fn_times, "validate", validate_with_pydantic, dashboard_obj)
-            logger.info(f"[/ASK] Dashboard validation result: ok={ok}, err={err}")
-            if not ok:
-                raise RuntimeError(f"Final dashboard invalid: {err}")
-
-            validated_json = validated.dict(by_alias=True) if hasattr(validated, "dict") else validated
-
-            logger.info(f"[/ASK] Posting dashboard to Grafana MCP endpoint.")
-            graf = time_call(
-                fn_times,
-                "post_grafana",
-                requests.post,
-                os.getenv("GRAFANA_MCP_URL", "http://grafana-mcp:8000/create_dashboard"),
-                headers={"Content-Type": "application/json"},
-                json=validated_json,
-                timeout=30,
-            )
-            graf.raise_for_status()
-
+        else:
+            logger.warning(f"Excel file not available, using direct prompt")
+            return {"status":"error","timestamp":ts,"summary":" file is failed " }
+    except Exception as exc:
+        logger.error(f"Error loading tasks: {exc}")
+        return {"status":"error","timestamp":ts,"summary":"Dummy File "}
+    #-----------------------------------------------
+    # for task in tasks:
+    for i in range(0,1):
+    #-------------------------------------------
+        # raw_input = task['question']
+        # id_input = task['index'] 
+        print(f"🧠 [ask_sql] Received prompt: {_short(raw_input)}")
+        logger.info(f"🧠 [ask_sql] Received prompt: {_short(raw_input)}")
+        user_input = normalize_synonyms(raw_input)
+        # ---- RAG retrieve for whole prompt ----
+        context = ""
+        if getattr(app.state, "qdrant", None) and getattr(app.state, "embedder", None):
             try:
-                graf_result = graf.json()
-                logger.info(f"[/ASK] Grafana MCP response: {graf_result}")
-            except Exception:
-                graf_result = {"text": graf.text}
+                q_vec = app.state.embedder.encode(user_input)
+                hits = app.state.qdrant.search(
+                    collection_name=app.state.qdrant_collection,
+                    query_vector=q_vec.tolist() if hasattr(q_vec, "tolist") else q_vec,
+                    limit=3
+                )
+                ctxs = [h.payload.get("text","") for h in hits if h.payload]
+                context = "\n".join(c for c in ctxs if c)
+            except Exception as e:
+                logger.error(f"[RAG] search failed (prompt): {e}")
+                
+        user_prompt_with_ctx = f"Context:\n{context}\n\nUser Request: {user_input}" if context else user_input
 
-            extra.update(
-                {
-                    "grafana_result": graf_result,
-                    "validated": (
-                        validated.dict(by_alias=True, exclude_none=True) if hasattr(validated, "dict") else validated
-                    ),
-                    "function_times_ms": fn_times,
-                }
+        # intents = extract_intents_from_prompt(user_input)
+        try:
+            intents = llm_extract_intents_ollama_http(user_prompt_with_ctx)
+            print(f"[ask_sql] LLM extracted {len(intents)} intents")    
+        except Exception:
+            intents = extract_intents_from_prompt(user_input)  
+            print(f"[ask_sql] Fallback extracted {len(intents)} intents")
+
+        N = len(intents)
+        if N == 0:
+            return {"status":"error","timestamp":ts,"summary":"Final Answer: " + json.dumps({"error":"No intents found."})}
+        if N > MAX_PANELS:
+            return {"status":"error","timestamp":ts,"summary":"Final Answer: " + json.dumps({"error":f"Requested {N} charts exceeds MAX_PANELS={MAX_PANELS}."})}
+        logger.info(f"[ask_sql] {N} intents extracted: {[_short(i) for i in intents]}")
+        print(f"[ask_sql] {N} intents extracted: {[_short(i) for i in intents]}")
+        # Run one agent per intent concurrently
+        tasks = []
+        for intent in intents:
+            intent_text = intent.get("note") or intent.get("title") or ""
+            intent_input  = (
+                f"{intent_text}\n"
+                f"Required chart type: {intent.get('chart_type', 'table')}\n"
+                f"Title: {intent.get('title', 'Result')}"
             )
-            logger.info(f"[/ASK] Dashboard created successfully.")
-            print(f"✅ Dashboard created: {graf_result}")
+            # ---- RAG retrieve for this intent ----
+            intent_ctx = ""
+            if getattr(app.state, "qdrant", None) and getattr(app.state, "embedder", None):
+                try:
+                    ivec = app.state.embedder.encode(intent_text)
+                    ihits = app.state.qdrant.search(
+                        collection_name=app.state.qdrant_collection,
+                        query_vector=ivec.tolist() if hasattr(ivec, "tolist") else ivec,
+                        limit=2
+                    )
+                    intent_ctx = "\n".join(h.payload.get("text","") for h in ihits if h.payload)
+                except Exception as e:
+                    logger.error(f"[RAG] search failed (intent): {e}")
+            print(f"[ask_sql] Launching agent for intent: {intent_text}")
+            logger.info(f"[ask_sql] Launching agent for intent: {intent_text}")
+            # Fresh guards per agent (so memo/caches are per-run)
+            inner_list = app.state.list_guard.inner_tool
+            inner_schema = app.state.schema_guard.inner_tool
+            inner_exec = app.state.exec_guard.inner_tool
+            print(f"[ask_sql] Using inner tools: list={inner_list}, schema={inner_schema}, exec={inner_exec}")
+            logger.info(f"[ask_sql] Using inner tools: list={inner_list}, schema={inner_schema}, exec={inner_exec}")
+            list_guard = ListTablesGuard(inner_tool=inner_list)
+            schema_guard = GetTableSchemaGuard(inner_tool=inner_schema)
+            schema_guard.list_tool = list_guard
+            exec_guard = ExecuteQueryGuard(inner_tool=inner_exec, schema_tool=schema_guard)
 
-            success = True
-            error_msg = ""
+            agent_tools = []
+            agent_tools.append(ToolAliasNoInput(name="sql.list_tables", target_tool=list_guard))
+            agent_tools.append(ToolAliasPassthrough(name="sql.schema", target_tool=schema_guard))
+            agent_tools.append(ToolAliasPassthrough(name="sql.query", target_tool=exec_guard))
+            print(f"[ask_sql] Agent tools: {[t.name for t in agent_tools]}")
+            logger.info(f"[ask_sql] Agent tools: {[t.name for t in agent_tools]}")
+            messages = [
+                ("system", system_text),
+                ("system", "{tools}\n\nValid tool names: {tool_names}"),
+                ("system",
+                "When you finish, emit exactly one line:\n"
+                "Final Answer: {{\"results\": [ {{\"sql\": \"...\", \"viz\": {{\"type\":\"barchart|line|piechart|table|stat|gauge\", \"format\":\"table|time_series\", \"title\":\"...\"}} }} ] }}\n"
+                "No code fences. No extra text. Do not say anything like 'Here is the corrected output:'."),
+                ("human", "{input}\n\n{agent_scratchpad}"),
+            ]
+            if intent_ctx:
+                messages.append(("system", f"Relevant information:\n{intent_ctx}"))
+            messages.append(("human", "{input}\n\n{agent_scratchpad}"))
+            
+            prompt_template = ChatPromptTemplate.from_messages(messages)
+
+            # 1) Build a ReAct agent that can think + call tools
+            agent = create_react_agent(
+                llm=app.state.llm,          # the LLM client you created at startup
+                tools=agent_tools,          # the tools the agent is allowed to use (list_tables, schema, query)
+                prompt=prompt_template      # the rules/format the agent must follow (your system prompt)
+            )
+
+            # 2) Wrap the agent in an executor that runs the ReAct loop safely
+            executor = AgentExecutor.from_agent_and_tools(
+                agent=agent,
+                tools=agent_tools,          # same tools passed through
+                verbose=True,               # print Thought/Action/Observation for debugging
+                max_iterations=12,          # hard stop so it can’t loop forever
+                early_stopping_method="force",  # if it hits the limit, stop immediately
+                handle_parsing_errors=(     # if LLM outputs the wrong shape, tell it how to fix format
+                    "Reformat your last message to comply with ReAct:\n"
+                    "It must be either:\n"
+                    '1) Thought: ...\\nAction: <tool name>\\nAction Input: { ... }\n'
+                    "or\n"
+                    '2) Final Answer: {"results":[{"sql":"...","viz":{"type":"...","format":"...","title":"..."}}]}\n'
+                    "No code fences. No extra text."
+                ),
+            )
+
+            print(f"[ask_sql] Agent created with max_iterations={executor.max_iterations}")
+            logger.info(f"[ask_sql] Agent created with max_iterations={executor.max_iterations}")
+            
+            # 4) Run this agent asynchronously for one intent and collect the task
+            tasks.append(
+                asyncio.create_task(
+                    executor.ainvoke({
+                        "input": intent_input,                           # the user’s specific intent (e.g., “sum sales by product as bar chart”)
+                        "tools": "\n".join(f"- {t.name}" for t in agent_tools),  # rendered into the prompt for the LLM to see
+                        "tool_names": ", ".join(t.name for t in agent_tools),     # same, compact form
+                        "format_instructions": FORMAT_INSTRUCTIONS      # reminds LLM of the exact JSON shape for Final Answer
+                    })
+                )
+            )
+
+                                                
+        print(f"[ask_sql] Launched {len(tasks)} agents concurrently")
+        logger.info(f"[ask_sql] Launched {len(tasks)} agents concurrently")
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+        results: List[Dict[str, Any]] = []
+        for resp in responses:
+            if isinstance(resp, Exception):
+                logger.error(f"Agent error: {resp}")
+                continue
+
+            output = resp.get("output") if isinstance(resp, dict) else str(resp)
+            if not output:
+                logger.error("Empty agent output")
+                continue
+
+            # fa_obj = _parse_final_answer_obj(output)
+            fa_obj = _parse_any_json(output) 
+            if not isinstance(fa_obj, dict):
+                logger.error(f"Could not parse JSON from agent output: {output[:300]}")
+                continue
+
+            items = fa_obj.get("results", [])
+            if not isinstance(items, list):
+                logger.error("Parse error: 'results' is not a list")
+                continue
+
+            for item in items:
+                norm = _normalize_result_item(item)
+                if norm:
+                    results.append(norm)
+
+
+        
+        print(f"[ask_sql] Collected {len(results)} raw results from agents")
+        logger.info(f"[ask_sql] Collected {len(results)} raw results from agents")
+        # Dedupe and cap to N
+        seen=set(); dedup=[]
+        for r in results:
+            fp = _sql_fingerprint(r["sql"])
+            if fp not in seen:
+                seen.add(fp); 
+                dedup.append(r)
+        dedup = dedup[:N]
+        seen_title = { (r.get("viz") or {}).get("title") or r.get("title") for r in dedup if (r.get("viz") or {}).get("title") or r.get("title") }
+        
+        short_title =  ", ".join(seen_title) 
+        short_title = "DSHB"+id_input + "-" + short_title
+        
+        print(f"🖼️ titles: {short_title}")
+        logger.info(f"[/ASK] Deduped final results:\n {dedup}")
+        final_answer = {"results": dedup}
+        sql_preview = ";\n".join([r["sql"] for r in dedup])
+        logger.info(f"[/ASK] Final SQL preview:\n {sql_preview}")
+
+        # --- NEW: execute final deduped SQLs and include normalized previews ---
+        exec_inner = app.state.exec_guard.inner_tool  # HttpExecute()
+        exec_guard_for_final = ExecuteQueryGuard(inner_tool=exec_inner)  # reuse normalizer/logging
+        exec_outputs = []
+        try:
+            for r in dedup:
+                    
+                title = (r.get("viz") or {}).get("title") or "Result"
+                ctype = (r.get("viz") or {}).get("type", "table")
+                fmt   = (r.get("viz") or {}).get("format", "table")
+                title = (r.get("viz") or {}).get("title") or "Result"
+                logger.info(
+                    "[/ASK] Executing final:\n title: %s,\n SQL: %s",
+                    _short(title, 300),
+                    _short(r.get("sql",""), 300),
+                )
+                payload = {
+                    "sql": r["sql"],
+                    "chart_type": ctype,
+                    "format": fmt,
+                    "title": title,
+                }
+                raw = await exec_guard_for_final._arun(tool_input=payload)
+                # normalize to dict for response
+                try:
+                    norm = json.loads(raw) if isinstance(raw, str) else raw
+                    logger.info(f"[/ASK] Final exec raw output: {_short(norm)}")
+                except Exception:
+                    norm = {"status": "ok", "columns": [], "rows": 0, "data_preview": [raw]}
+                exec_outputs.append({
+                    "sql": r["sql"],
+                    "viz": r["viz"],
+                    "result": norm,
+                })
+            # mark success if we executed at least one
+            logger.info(
+                "[/ASK] Final exec outputs:\n %s",
+                ", ".join(_short(o, 300) for o in exec_outputs)
+            )
+            success = len(exec_outputs) > 0    
+            error_msg = ""    
         except Exception as e:
-            print(f"❌ Dashboard step failed: {e}")
-            logger.exception("Dashboard pipeline failed")
-            extra["dashboard_error"] = str(e)
-            error_msg = str(e)
-    else:
-        print("❌ No valid SQL generated; skipping dashboard creation.")
-        logger.error("No valid SQL generated; skipping dashboard creation.")
-        error_msg = "No valid SQL generated"
+            logger.exception("Final execution of deduped SQL failed")
+            error_msg = f"Final execution failed: {e}"
+            success = False
 
-    # one place to record metrics (no undefined 'steps')
-    try:
-        record_metric(
-            prompt=req.prompt,
-            start_ts=start,
-            success=success,
-            error_msg=error_msg,
-            iterations=len(dedup),
-            function_times=fn_times,
-        )
-    except Exception:
-        logger.exception("record_metric failed")
+        # prepare shared containers
+        extra: Dict[str, Any] = {}
+        fn_times: Dict[str, int] = {}
+        # success = False
+        
 
-    if success:
-        return {
-            "status": "success",
-            "timestamp": ts,
-            "sql": sql_preview,
-            "summary": "Final Answer: " + json.dumps({"results": dedup}),
-            "executions": exec_outputs,   # <-- preview rows/columns per SQL
-        }
-    else:
-        return {
-            "status": "error",
-            "timestamp": ts,
-            "sql": sql_preview,
-            "summary": "Final Answer: " + json.dumps({"error": error_msg or "No valid SQL generated."}),
-        }
+        if dedup:  # we have at least one SQL/panel
+            try:
+                
+                # Each deduped result already has a 'sql' and a 'viz' dictionary.
+                sql_data = [{"sql": r["sql"], "viz": r.get("viz", {})} for r in dedup]
+                logger.info(f"[/ASK] SQL data for dashboard generation: {_short(sql_data, 1000)}")
+                # Build a simple request object for the new dashboard function.
+                            
+                request_obj = types.SimpleNamespace(
+                    sql=sql_data,
+                    title=short_title,
+                    grafana_url="",
+                    headers={},
+                    num_reports=len(sql_data)
+                )
+                # Generate the dashboard JSON using the new function
+                dashboard_obj = time_call(
+                    fn_times,
+                    "ollama_generate",
+                    create_grafana_dashboard,
+                    request=request_obj
+                )
+                logger.info(f"[/ASK] Generated dashboard object: {_short(dashboard_obj, 1000)}")
+
+                _ensure_panel_formats(dashboard_obj)
+                ok, err, validated = time_call(fn_times, "validate", validate_with_pydantic, dashboard_obj)
+                logger.info(f"[/ASK] Dashboard validation result: ok={ok}, err={err}")
+                if not ok:
+                    raise RuntimeError(f"Final dashboard invalid: {err}")
+
+                validated_json = validated.dict(by_alias=True) if hasattr(validated, "dict") else validated
+
+                logger.info(f"[/ASK] Posting dashboard to Grafana MCP endpoint.")
+                graf = time_call(
+                    fn_times,
+                    "post_grafana",
+                    requests.post,
+                    os.getenv("GRAFANA_MCP_URL", "http://grafana-mcp:8000/create_dashboard"),
+                    headers={"Content-Type": "application/json"},
+                    json=validated_json,
+                    timeout=30,
+                )
+                graf.raise_for_status()
+
+                try:
+                    graf_result = graf.json()
+                    logger.info(f"[/ASK] Grafana MCP response: {graf_result}")
+                except Exception:
+                    graf_result = {"text": graf.text}
+
+                extra.update(
+                    {
+                        "grafana_result": graf_result,
+                        "validated": (
+                            validated.dict(by_alias=True, exclude_none=True) if hasattr(validated, "dict") else validated
+                        ),
+                        "function_times_ms": fn_times,
+                    }
+                )
+                logger.info(f"[/ASK] Dashboard created successfully.")
+                print(f"✅ Dashboard created: {graf_result}")
+
+                success = True
+                error_msg = ""
+            except Exception as e:
+                print(f"❌ Dashboard step failed: {e}")
+                logger.exception("Dashboard pipeline failed")
+                extra["dashboard_error"] = str(e)
+                error_msg = str(e)
+        else:
+            print("❌ No valid SQL generated; skipping dashboard creation.")
+            logger.error("No valid SQL generated; skipping dashboard creation.")
+            error_msg = "No valid SQL generated"
+
+        # one place to record metrics (no undefined 'steps')
+        try:
+            record_metric(
+                prompt=req.prompt,
+                start_ts=start,
+                success=success,
+                error_msg=error_msg,
+                iterations=len(dedup),
+                function_times=fn_times,
+            )
+        except Exception:
+            logger.exception("record_metric failed")
+
+        if success:
+            return {
+                "status": "success",
+                "timestamp": ts,
+                "sql": sql_preview,
+                "summary": "Final Answer: " + json.dumps({"results": dedup}),
+                "executions": exec_outputs,   # <-- preview rows/columns per SQL
+            }
+        else:
+            return {
+                "status": "error",
+                "timestamp": ts,
+                "sql": sql_preview,
+                "summary": "Final Answer: " + json.dumps({"error": error_msg or "No valid SQL generated."}),
+            }
